@@ -9,11 +9,9 @@
  * - a_labelUV:    atlasU, atlasV, atlasW, atlasH
  * - a_labelStyle: charH, color(packed u32), 0, 0
  *
- * Position texture (RGBA32F, 128×1):
- * - R: anchor X (world)
- * - G: anchor Y (world)
- * - B: visibility alpha (0 or 1)
- * - A: unused
+ * Position texture (RGBA32F, 128×2):
+ * - Row 0: anchorX, anchorY, alpha, yShift
+ * - Row 1: hpValue, barWidth, barVisible, 0 (used by HP bar shader)
  */
 
 export const labelVertexShader = /*glsl*/ `#version 300 es
@@ -64,11 +62,11 @@ void main() {
   // Texture coordinates
   v_texCoord = (a_labelUV.xy + a_position * a_labelUV.zw) / u_atlasSize;
 
-  // World position
+  // World position — apply yShift from posData.w (pushes label up when HP bar present)
   vec2 charOffset = a_labelPos.yz;
   vec2 charSize = vec2(a_labelPos.w, a_labelStyle.x);
 
-  vec2 worldPos = posData.xy + charOffset + a_position * charSize;
+  vec2 worldPos = posData.xy + vec2(0.0, posData.w) + charOffset + a_position * charSize;
   worldPos -= u_cameraPos;
 
   vec3 projected = u_projection * vec3(worldPos, 1.0);

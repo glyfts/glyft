@@ -37,8 +37,10 @@ import { createMusicManager, type MusicManager } from './music';
 import { CameraImpl } from './camera';
 import { InputImpl } from './input';
 import { TweenManager, type TweenProps, type TweenOptions } from './tween';
-import { createFloatTextManager, generateFontAtlas, type FloatTextManager, type FontAtlas } from './floattext';
+import { createFloatTextManager, generateFontAtlas, packColorF32, type FloatTextManager, type FontAtlas } from './floattext';
 import { createLabelManager, type LabelManager, type LabelSpriteData } from './labels';
+import { createHpBarManager, type HpBarManager } from './hpbars';
+import { createParticleManager, type ParticleManager } from './particles';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -93,6 +95,13 @@ interface InternalSprite {
   labelVisible: string;
   labelRange: number;
   labelSlot: number;
+  labelIcon: string | null;
+  labelIconColor: number;
+  hpBarVisible: boolean;
+  hpBarValue: number;
+  hpBarWidth: number;
+  hpBarColor: 'auto' | number;
+  hpBarBgColor: number;
   // Pointer event listeners (lazily allocated)
   _listeners: Record<string, ((e: SpritePointerEvent) => void)[]> | null;
 }
@@ -156,6 +165,8 @@ export class GlyftEngine {
   private _fontAtlas!: FontAtlas;
   private _floatTextManager!: FloatTextManager;
   private _labelManager!: LabelManager;
+  private _hpBarManager!: HpBarManager;
+  private _particleManager!: ParticleManager;
 
   // Depth sorting
   private _depthSortCounter = 0;
@@ -217,6 +228,8 @@ export class GlyftEngine {
     this._fontAtlas = generateFontAtlas(this.gl);
     this._floatTextManager = createFloatTextManager(this.gl, this._fontAtlas);
     this._labelManager = createLabelManager(this.gl, this._fontAtlas);
+    this._hpBarManager = createHpBarManager(this.gl, this._labelManager.getPositionTexture());
+    this._particleManager = createParticleManager(this.gl);
 
     // Pointer event dispatch (click → sprite callbacks + game-level event)
     canvas.addEventListener('pointerdown', (e) => {
@@ -275,6 +288,11 @@ export class GlyftEngine {
     }
     if (config.music) {
       this._musicManager.define(config.music);
+    }
+    if (config.particles) {
+      for (const [name, def] of Object.entries(config.particles)) {
+        this._particleManager.define(name, def);
+      }
     }
 
     // Set initial clear color
@@ -966,6 +984,13 @@ export class GlyftEngine {
       labelVisible: 'always',
       labelRange: 80,
       labelSlot: -1,
+      labelIcon: null,
+      labelIconColor: 0xffff00,
+      hpBarVisible: false,
+      hpBarValue: 1.0,
+      hpBarWidth: 40,
+      hpBarColor: 'auto' as 'auto' | number,
+      hpBarBgColor: 0x000000,
       _listeners: null,
     };
 
@@ -1053,9 +1078,15 @@ export class GlyftEngine {
             sprite.labelSlot = self._labelManager.allocSlot(sprite.id);
           }
           if (sprite.labelSlot >= 0) {
-            self._labelManager.setLabel(sprite.labelSlot, v, sprite.labelColor);
+            self._labelManager.setLabel(sprite.labelSlot, v, sprite.labelColor, sprite.labelIcon ?? undefined, sprite.labelIconColor);
+            if (sprite.hpBarVisible) {
+              const fc = sprite.hpBarColor === 'auto' ? 0 : packColorF32(sprite.hpBarColor);
+              self._labelManager.setHpData(sprite.labelSlot, sprite.hpBarValue, sprite.hpBarWidth, true, fc, packColorF32(sprite.hpBarBgColor));
+              self._labelManager.setYShift(sprite.labelSlot, -6);
+            }
           }
-        } else if (sprite.labelSlot >= 0) {
+        } else if (sprite.labelSlot >= 0 && !sprite.hpBarVisible) {
+          // Only free slot if HP bar isn't using it
           self._labelManager.freeSlot(sprite.labelSlot);
           sprite.labelSlot = -1;
         }
@@ -1064,13 +1095,80 @@ export class GlyftEngine {
       set labelColor(v: number) {
         sprite.labelColor = v;
         if (sprite.labelText !== null && sprite.labelSlot >= 0) {
-          self._labelManager.setLabel(sprite.labelSlot, sprite.labelText, v);
+          self._labelManager.setLabel(sprite.labelSlot, sprite.labelText, v, sprite.labelIcon ?? undefined, sprite.labelIconColor);
         }
       },
       get labelVisible(): import('./types').LabelVisible { return sprite.labelVisible as import('./types').LabelVisible; },
       set labelVisible(v: import('./types').LabelVisible) { sprite.labelVisible = v; },
       get labelRange() { return sprite.labelRange; },
       set labelRange(v: number) { sprite.labelRange = v; },
+      get labelIcon() { return sprite.labelIcon; },
+      set labelIcon(v: string | null) {
+        sprite.labelIcon = v;
+        if (sprite.labelText !== null && sprite.labelSlot >= 0) {
+          self._labelManager.setLabel(sprite.labelSlot, sprite.labelText, sprite.labelColor, v ?? undefined, sprite.labelIconColor);
+        }
+      },
+      get labelIconColor() { return sprite.labelIconColor; },
+      set labelIconColor(v: number) {
+        sprite.labelIconColor = v;
+        if (sprite.labelIcon && sprite.labelText !== null && sprite.labelSlot >= 0) {
+          self._labelManager.setLabel(sprite.labelSlot, sprite.labelText, sprite.labelColor, sprite.labelIcon, v);
+        }
+      },
+      get hpBarVisible() { return sprite.hpBarVisible; },
+      set hpBarVisible(v: boolean) {
+        sprite.hpBarVisible = v;
+        if (v && sprite.labelSlot === -1) {
+          sprite.labelSlot = self._labelManager.allocSlot(sprite.id);
+        }
+        if (sprite.labelSlot >= 0) {
+          const fc = sprite.hpBarColor === 'auto' ? 0 : packColorF32(sprite.hpBarColor);
+          const bg = packColorF32(sprite.hpBarBgColor);
+          self._labelManager.setHpData(sprite.labelSlot, sprite.hpBarValue, sprite.hpBarWidth, v, fc, bg);
+          self._labelManager.setYShift(sprite.labelSlot, v ? -6 : 0);
+          if (sprite.labelText !== null) {
+            self._labelManager.setLabel(sprite.labelSlot, sprite.labelText, sprite.labelColor, sprite.labelIcon ?? undefined, sprite.labelIconColor);
+          }
+          // Free slot if neither label nor HP bar needs it
+          if (!v && sprite.labelText === null) {
+            self._labelManager.freeSlot(sprite.labelSlot);
+            sprite.labelSlot = -1;
+          }
+        }
+      },
+      get hpBarValue() { return sprite.hpBarValue; },
+      set hpBarValue(v: number) {
+        sprite.hpBarValue = v;
+        if (sprite.labelSlot >= 0 && sprite.hpBarVisible) {
+          const fc = sprite.hpBarColor === 'auto' ? 0 : packColorF32(sprite.hpBarColor);
+          self._labelManager.setHpData(sprite.labelSlot, v, sprite.hpBarWidth, true, fc, packColorF32(sprite.hpBarBgColor));
+        }
+      },
+      get hpBarWidth() { return sprite.hpBarWidth; },
+      set hpBarWidth(v: number) {
+        sprite.hpBarWidth = v;
+        if (sprite.labelSlot >= 0 && sprite.hpBarVisible) {
+          const fc = sprite.hpBarColor === 'auto' ? 0 : packColorF32(sprite.hpBarColor);
+          self._labelManager.setHpData(sprite.labelSlot, sprite.hpBarValue, v, true, fc, packColorF32(sprite.hpBarBgColor));
+        }
+      },
+      get hpBarColor() { return sprite.hpBarColor; },
+      set hpBarColor(v: 'auto' | number) {
+        sprite.hpBarColor = v;
+        if (sprite.labelSlot >= 0 && sprite.hpBarVisible) {
+          const fc = v === 'auto' ? 0 : packColorF32(v);
+          self._labelManager.setHpData(sprite.labelSlot, sprite.hpBarValue, sprite.hpBarWidth, true, fc, packColorF32(sprite.hpBarBgColor));
+        }
+      },
+      get hpBarBgColor() { return sprite.hpBarBgColor; },
+      set hpBarBgColor(v: number) {
+        sprite.hpBarBgColor = v;
+        if (sprite.labelSlot >= 0 && sprite.hpBarVisible) {
+          const fc = sprite.hpBarColor === 'auto' ? 0 : packColorF32(sprite.hpBarColor);
+          self._labelManager.setHpData(sprite.labelSlot, sprite.hpBarValue, sprite.hpBarWidth, true, fc, packColorF32(v));
+        }
+      },
       get atlas() { return self._createAtlasProxy(sprite.atlas); },
       get exists() { return sprite.exists; },
       get width() { return sprite.frameW; },
@@ -1320,6 +1418,15 @@ export class GlyftEngine {
     this._floatTextManager.spawn(x, y, text, this._time, options);
   }
 
+  /** Particle system: define emitters and emit bursts */
+  get particles() {
+    const self = this;
+    return {
+      define(name: string, def: import('./types').ParticleEmitterDef) { self._particleManager.define(name, def); },
+      emit(name: string, x: number, y: number) { self._particleManager.emit(name, x, y, self._time); },
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Collision
   // ---------------------------------------------------------------------------
@@ -1468,6 +1575,11 @@ export class GlyftEngine {
       }
       this._parseMagnetizeRules();
     }
+    if (config.particles) {
+      for (const [name, def] of Object.entries(config.particles)) {
+        this._particleManager.define(name, def);
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1523,8 +1635,11 @@ export class GlyftEngine {
     // Run reactive sound triggers
     this._updateReactiveSounds();
 
-    // Update floating text (expire old particles)
+    // Update floating text (expire old entries)
     this._floatTextManager.update(this._time);
+
+    // Update particles (expire dead particles)
+    this._particleManager.update(this._time);
 
     // Render
     this._render();
@@ -1751,11 +1866,18 @@ export class GlyftEngine {
         // Apply collision action
         const proxyA = this._createSpriteProxy(spriteA);
         const proxyB = this._createSpriteProxy(spriteB);
-        applyCollisionAction(action, proxyB, proxyA, {
+        applyCollisionAction(action, proxyA, proxyB, {
           stats: this._stats,
           sounds: this.sounds,
           floatText: (x, y, text, opts) => this._floatTextManager.spawn(x, y, text, this._time, opts),
         });
+
+        // Emit particles at collision midpoint
+        if (action.particles) {
+          const cx = (spriteA.x + spriteB.x) / 2 + (spriteA.frameW + spriteB.frameW) / 4;
+          const cy = (spriteA.y + spriteB.y) / 2 + (spriteA.frameH + spriteB.frameH) / 4;
+          this._particleManager.emit(action.particles, cx, cy, this._time);
+        }
 
         // Play collision sound if defined in sound rules
         this._triggerCollisionSound(spriteA, spriteB);
@@ -1957,6 +2079,19 @@ export class GlyftEngine {
       this._hoveredSprite?.id ?? null,
     );
     this._labelManager.render(projection, this._camera.x, this._camera.y);
+
+    // Render HP bars (between labels and float text)
+    const activeHpSlots: number[] = [];
+    this._sprites.forEach((s) => {
+      if (s.exists && s.hpBarVisible && s.labelSlot >= 0) {
+        activeHpSlots.push(s.labelSlot);
+      }
+    });
+    this._hpBarManager.updateActiveSlots(activeHpSlots);
+    this._hpBarManager.render(projection, this._camera.x, this._camera.y);
+
+    // Render particles (after HP bars, before float text)
+    this._particleManager.render(projection, this._time, this._camera.x, this._camera.y);
 
     // Render floating text (on top of everything)
     this._floatTextManager.render(projection, this._time, this._camera.x, this._camera.y);

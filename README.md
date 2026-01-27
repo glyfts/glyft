@@ -57,8 +57,11 @@ npm install glyft
 import { Glyft } from 'glyft';
 
 const game = new Glyft(canvas, {
-  tileSize: 16,
-  viewport: [320, 240],
+  settings: {
+    tileSize: 16,
+    viewport: [320, 240],
+    spriteMode: '4dir',
+  },
 
   // Collisions as rules, not callbacks
   collisions: {
@@ -70,6 +73,11 @@ const game = new Glyft(canvas, {
   sounds: {
     '[player]:[enemy]': { sound: 'hit.wav', cooldown: 0.5 },
     '[player]:moving': { sound: 'step.wav', interval: 0.25 },
+  },
+
+  // GPU particle effects
+  particles: {
+    hit_sparks: { count: 8, speed: 60, spread: 120, lifetime: 0.3, color: 0xffcc44, colorEnd: 0xff4400, size: 3, sizeEnd: 1, gravity: 100 },
   },
 });
 
@@ -93,22 +101,60 @@ game.start();
 
 Traditional engines process each sprite individually. That's O(n) CPU work per frame.
 
-Glyft batches everything. All sprites using the same atlas render in one draw call. Animation frames are computed in GPU shaders, not JavaScript loops.
+Glyft batches everything into a single draw call per texture atlas. Animation, direction, HP bars, labels, and particles are all computed in GPU shaders with zero per-frame allocations.
 
 | Sprites | FPS | Draw Calls |
 |---------|-----|------------|
 | 1,000 | 60 | 1 |
+| 5,000 | 60 | 1 |
 | 10,000 | 30-40 | 1 |
 | 25,000+ | 15-20 | 1 |
+
+## Features
+
+- **Config-driven** - Collisions, sounds, music, particles defined as data
+- **GPU animation** - Velocity-driven direction and frame selection in shaders
+- **GPU particle system** - Instanced ring-buffer pool, one draw call, zero allocations
+- **GPU HP bars** - Per-sprite health bars rendered entirely on the GPU
+- **GPU labels** - Sprite names and icon indicators with proximity visibility
+- **GPU floating text** - Damage numbers, pickups, XP popups
+- **Reactive sounds** - Pattern-matched triggers with spatial audio
+- **Collision system** - Pattern-based rules with damage, knockback, magnetize, particles
+- **Tween system** - Animate any property with easing curves
+- **Tiled map loader** - Import maps from Tiled editor
+- **Zero dependencies** - Pure TypeScript + WebGL2
+
+## Collision Rules
+
+Pattern `[A]:[B]` means "A encounters B":
+- **Effects** (damage, heal, knockback, flash) target A
+- **Removal** (destroy, collect) targets B
+- **Particles** emit at the collision midpoint
+
+```typescript
+collisions: {
+  // Player takes 10 damage, enemy is unharmed
+  '[player]:[enemy]': { damage: 10, knockback: 80, particles: 'hit_sparks' },
+  // Coin is destroyed, player gets +1 coins
+  '[player]:[coin]': { collect: 'coins', destroy: true, particles: 'sparkle' },
+}
+```
 
 ## Examples
 
 ```bash
-git clone https://github.com/glyft/glyft
+git clone https://github.com/AtonalStar/glyft
 cd glyft && npm install && npm run dev
 # http://localhost:5173/examples/basic/
 # http://localhost:5173/examples/benchmark/
+# http://localhost:5173/examples/rpg/
 ```
+
+| Example | Features |
+|---------|----------|
+| Basic | Tilemap, sprites, enemies, sounds, music, collisions |
+| Benchmark | 5K-50K animated sprites, FPS counter |
+| RPG | Multi-room dungeon, NPCs, dialogue, combat, projectiles, particles, HP bars, labels |
 
 ## License
 

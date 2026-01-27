@@ -185,6 +185,36 @@ export interface CollisionAction {
   magnetize?: { range: number; speed: number };
   /** Show floating text on collision. true = auto from damage/heal/collect. */
   floatText?: FloatTextAction;
+  /** Emit particles on collision. String = emitter name at collision point. */
+  particles?: string;
+}
+
+/** Particle emitter definition */
+export interface ParticleEmitterDef {
+  /** Number of particles per burst (default: 10) */
+  count?: number;
+  /** Initial speed in pixels/second (default: 50) */
+  speed?: number;
+  /** Speed variance +/- (default: 0) */
+  speedVariance?: number;
+  /** Emission angle in degrees, 0=right, -90=up (default: -90) */
+  angle?: number;
+  /** Spread arc in degrees centered on angle (default: 360) */
+  spread?: number;
+  /** Lifetime in seconds (default: 0.5) */
+  lifetime?: number;
+  /** Lifetime variance +/- seconds (default: 0) */
+  lifetimeVariance?: number;
+  /** Gravity in px/s², positive=down (default: 0) */
+  gravity?: number;
+  /** Start color as 0xRRGGBB (default: 0xffffff) */
+  color?: number;
+  /** End color as 0xRRGGBB (default: same as color) */
+  colorEnd?: number;
+  /** Start size in pixels (default: 3) */
+  size?: number;
+  /** End size in pixels (default: 0) */
+  sizeEnd?: number;
 }
 
 /** Custom handler function */
@@ -273,6 +303,9 @@ export interface GlyftConfig {
    * @example { openChest: (player, chest, game) => { ... } }
    */
   handlers?: Record<string, Handler>;
+
+  /** Particle emitter definitions */
+  particles?: Record<string, ParticleEmitterDef>;
 
   /** Network configuration for multiplayer */
   network?: NetworkConfig;
@@ -391,6 +424,27 @@ export interface Sprite {
 
   /** Proximity range in pixels for 'proximity' mode (default: 80) */
   labelRange: number;
+
+  /** Icon character above label text (e.g. "!" for quest). null = no icon. */
+  labelIcon: string | null;
+
+  /** Icon color as 0xRRGGBB (default: 0xffff00) */
+  labelIconColor: number;
+
+  /** Whether to show an HP bar above the sprite. */
+  hpBarVisible: boolean;
+
+  /** HP bar fill value 0.0–1.0 (fraction of max HP). */
+  hpBarValue: number;
+
+  /** HP bar width in pixels (default: 40). */
+  hpBarWidth: number;
+
+  /** HP bar fill color: 'auto' for green/yellow/red preset, or 0xRRGGBB for fixed color (default: 'auto'). */
+  hpBarColor: 'auto' | number;
+
+  /** HP bar background color as 0xRRGGBB (default: 0x000000). */
+  hpBarBgColor: number;
 
   /**
    * Tags for collision/sound pattern matching.
@@ -727,6 +781,12 @@ export interface Glyft {
   readonly collisions: {
     define(rules: Record<string, string | CollisionAction>): void;
     on(pattern: string, callback: (a: Sprite, b: Sprite) => void): void;
+  };
+
+  /** Particle system */
+  readonly particles: {
+    define(name: string, def: ParticleEmitterDef): void;
+    emit(name: string, x: number, y: number): void;
   };
 
   /** Network (if configured) */

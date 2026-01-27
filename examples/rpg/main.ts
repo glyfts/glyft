@@ -28,8 +28,8 @@ const ROOMS = {
     height: 18,
     music: 'peaceful',
     npcs: [
-      { type: 'npc', x: 5, y: 5, dialogue: 'elder' },
-      { type: 'npc', x: 12, y: 8, dialogue: 'merchant' },
+      { type: 'npc', x: 5, y: 5, dialogue: 'elder', quest: true },
+      { type: 'npc', x: 12, y: 8, dialogue: 'merchant', quest: false },
     ],
     enemies: [],
     items: [
@@ -120,6 +120,7 @@ const config: GlyftConfig = {
     'coin': ['item', 'collectible'],
     'key': ['item', 'collectible', 'key'],
     'heart': ['item', 'collectible', 'heal'],
+    'projectile': ['projectile'],
   },
 
   // Player stats
@@ -150,13 +151,16 @@ const config: GlyftConfig = {
   // Collision rules
   collisions: {
     // Combat - player takes damage from enemies
-    '[player]:[enemy]': { damage: 10, knockback: 80, flash: 0.2, cooldown: 0.5, floatText: { scale: 0.5 } },
-    '[player]:[boss]': { damage: 25, knockback: 120, flash: 0.3, cooldown: 0.8, floatText: { scale: 0.5 } },
+    '[player]:[enemy]': { damage: 10, knockback: 80, flash: 0.2, cooldown: 0.5, floatText: { scale: 0.5 }, particles: 'hit_sparks' },
+    '[player]:[boss]': { damage: 25, knockback: 120, flash: 0.3, cooldown: 0.8, floatText: { scale: 0.5 }, particles: 'boss_hit' },
 
     // Collection - items magnetize toward player then collect on touch
-    '[player]:[collectible]': { magnetize: { range: 48, speed: 80 }, collect: 'coins', destroy: true },
-    '[player]:[key]': { magnetize: { range: 48, speed: 80 }, collect: 'keys', destroy: true },
-    '[player]:[heal]': { magnetize: { range: 48, speed: 80 }, heal: 25, destroy: true },
+    '[player]:[collectible]': { magnetize: { range: 48, speed: 80 }, collect: 'coins', destroy: true, particles: 'coin_sparkle' },
+    '[player]:[key]': { magnetize: { range: 48, speed: 80 }, collect: 'keys', destroy: true, particles: 'coin_sparkle' },
+    '[player]:[heal]': { magnetize: { range: 48, speed: 80 }, heal: 25, destroy: true, particles: 'heal_glow' },
+
+    // Projectile hits enemy
+    '[projectile]:[enemy]': 'projectileHit',
 
     // NPC interaction handled via custom handler
     '[player]:[npc]': 'interactNPC',
@@ -164,11 +168,33 @@ const config: GlyftConfig = {
 
   // Custom handlers
   handlers: {
+    projectileHit: (projectile: Sprite, enemy: Sprite, game) => {
+      if (enemy.hp !== undefined) {
+        enemy.hp -= 15;
+        enemy.data._flashUntil = Date.now() + 100;
+        enemy.data._flashColor = 0xff0000;
+      }
+      const cx = (projectile.x + enemy.x) / 2 + enemy.width / 2;
+      const cy = (projectile.y + enemy.y) / 2 + enemy.height / 2;
+      game.particles.emit('hit_sparks', cx, cy);
+      game.floatText(cx, cy, '-15', { color: 0xff4444, style: 'rise', scale: 0.5 });
+      projectile.destroy();
+    },
+
     interactNPC: (_player: Sprite, npc: Sprite) => {
       // This just marks which NPC we're near
       // Actual dialogue is triggered by Space key
       (window as unknown as { nearbyNPC: Sprite | null }).nearbyNPC = npc;
     },
+  },
+
+  // Particle effects
+  particles: {
+    hit_sparks:   { count: 8,  speed: 60, speedVariance: 20, angle: -90, spread: 120, lifetime: 0.3, lifetimeVariance: 0.1, gravity: 100, color: 0xffcc44, colorEnd: 0xff4400, size: 3, sizeEnd: 1 },
+    boss_hit:     { count: 16, speed: 80, speedVariance: 30, angle: -90, spread: 180, lifetime: 0.5, lifetimeVariance: 0.15, gravity: 60, color: 0xff44ff, colorEnd: 0x4400ff, size: 4, sizeEnd: 1 },
+    death_burst:  { count: 20, speed: 40, speedVariance: 20, spread: 360, lifetime: 0.6, lifetimeVariance: 0.2, gravity: 20, color: 0xff6666, colorEnd: 0x440000, size: 4, sizeEnd: 0 },
+    heal_glow:    { count: 12, speed: 20, speedVariance: 10, angle: -90, spread: 60, lifetime: 0.8, lifetimeVariance: 0.2, gravity: -30, color: 0x44ff66, colorEnd: 0x00ff88, size: 3, sizeEnd: 2 },
+    coin_sparkle: { count: 6,  speed: 30, speedVariance: 15, spread: 360, lifetime: 0.4, lifetimeVariance: 0.1, color: 0xffdd44, colorEnd: 0xffff88, size: 2, sizeEnd: 0 },
   },
 
   // Music tracks (procedural for this example)
@@ -195,6 +221,8 @@ interface GameState {
   dialogueIndex: number;
   dialogueSpeaker: string;
   exitCooldown: number; // Prevents immediate re-exit after room transition
+  projectiles: { sprite: Sprite; birth: number }[];
+  lastShotTime: number;
 }
 
 const state: GameState = {
@@ -209,6 +237,8 @@ const state: GameState = {
   dialogueIndex: 0,
   dialogueSpeaker: '',
   exitCooldown: 0,
+  projectiles: [],
+  lastShotTime: 0,
 };
 
 // Make state accessible for collision handler
@@ -244,9 +274,11 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
   for (const enemy of state.enemies) enemy.destroy();
   for (const npc of state.npcs) npc.destroy();
   for (const item of state.items) item.destroy();
+  for (const p of state.projectiles) p.sprite.destroy();
   state.enemies = [];
   state.npcs = [];
   state.items = [];
+  state.projectiles = [];
 
   // Destroy old map if exists
   if (currentMap) {
@@ -270,6 +302,13 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
     const npcName = (npcData.dialogue as string).charAt(0).toUpperCase() + (npcData.dialogue as string).slice(1);
     npc.label = npcName;
     npc.labelColor = 0x66ff66;
+
+    // Quest indicator icon above label
+    if (npcData.quest) {
+      npc.labelIcon = '!';
+      npc.labelIconColor = 0xffff00;
+    }
+
     state.npcs.push(npc);
   }
 
@@ -286,13 +325,18 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
       enemy.tags = ['enemy', 'hostile', 'boss'];
       enemy.label = 'Boss';
       enemy.labelColor = 0xff00ff;
+      enemy.hpBarWidth = 50;
     } else {
       enemy.tint = 0xff6666; // Red for regular enemies
       enemy.hp = 30;
       enemy.tags = ['enemy', 'hostile'];
       enemy.label = 'Slime';
       enemy.labelColor = 0xff6666;
+      enemy.hpBarWidth = 30;
     }
+
+    enemy.data.maxHp = enemy.hp;
+    enemy.hpBarVisible = true;
 
     state.enemies.push(enemy);
   }
@@ -341,6 +385,8 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
     state.player.tags = ['player'];
     state.player.label = 'Hero';
     state.player.labelColor = 0xffffff;
+    state.player.hpBarVisible = true;
+    state.player.hpBarWidth = 40;
   }
 
   state.player.x = (spawnX ?? Math.floor(room.width / 2)) * 16;
@@ -395,7 +441,7 @@ function generateTerrain(width: number, height: number, roomId: string) {
       const x = 2 + Math.floor(Math.random() * (width - 4));
       const y = 2 + Math.floor(Math.random() * (height - 4));
       if (!isNearSpecialLocation(x, y, roomId)) {
-        currentMap.set(x, y, 4); // Tree tile
+        currentMap.set(x, y, 13); // Tree tile (brown)
         currentMap.setCollision(x, y, true);
       }
     }
@@ -491,9 +537,44 @@ function advanceDialogue() {
     // End dialogue
     state.dialogueActive = false;
     dialogueEl.classList.remove('visible');
+
+    // Change quest indicator from ! to ? after talking
+    if (state.nearbyNPC?.labelIcon === '!') {
+      state.nearbyNPC.labelIcon = '?';
+      state.nearbyNPC.labelIconColor = 0x888888;
+    }
   } else {
     showDialogueLine();
   }
+}
+
+// =============================================================================
+// Projectile System
+// =============================================================================
+
+function fireProjectile() {
+  if (!state.player) return;
+
+  const now = performance.now() / 1000;
+  if (now - state.lastShotTime < PROJECTILE_COOLDOWN) return;
+  state.lastShotTime = now;
+
+  const facing = state.player.facing;
+  const dirMap: Record<string, [number, number]> = {
+    down: [0, 1], right: [1, 0], up: [0, -1], left: [-1, 0],
+  };
+  const [dx, dy] = dirMap[facing];
+
+  const proj = game.createSprite(atlas, 'projectile');
+  proj.x = state.player.x;
+  proj.y = state.player.y;
+  proj.vx = dx * PROJECTILE_SPEED;
+  proj.vy = dy * PROJECTILE_SPEED;
+  proj.tags = ['projectile'];
+  proj.tint = 0x44ccff;
+  proj.scale = 0.4;
+
+  state.projectiles.push({ sprite: proj, birth: now });
 }
 
 // =============================================================================
@@ -502,6 +583,9 @@ function advanceDialogue() {
 
 const PLAYER_SPEED = 100;
 const ENEMY_SPEED = 30;
+const PROJECTILE_SPEED = 200;
+const PROJECTILE_COOLDOWN = 0.3;
+const PROJECTILE_LIFETIME = 1.0;
 
 game.onUpdate((dt) => {
   if (!state.player) return;
@@ -562,7 +646,7 @@ game.onUpdate((dt) => {
     const dy = state.player.y - enemy.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist > 20 && dist < 150) {
+    if (dist < 150) {
       const speed = enemy.tags.includes('boss') ? ENEMY_SPEED * 0.7 : ENEMY_SPEED;
       enemy.vx = (dx / dist) * speed;
       enemy.vy = (dy / dist) * speed;
@@ -588,12 +672,18 @@ game.onUpdate((dt) => {
       enemy.vy = lerp(enemy.vy, 0, 0.1);
     }
 
+    // Update enemy HP bar
+    if (enemy.hp !== undefined && enemy.data.maxHp) {
+      enemy.hpBarValue = Math.max(0, enemy.hp / (enemy.data.maxHp as number));
+    }
+
     // Check if enemy died
     if (enemy.hp !== undefined && enemy.hp <= 0) {
       const isBoss = enemy.tags.includes('boss');
       const xp = isBoss ? 50 : 10;
       const cx = enemy.x + enemy.width / 2;
       game.floatText(cx, enemy.y, `+${xp} XP`, { color: 0xaa88ff, style: 'rise', duration: 1.2, scale: 0.5 });
+      game.particles.emit('death_burst', cx, enemy.y);
       enemy.destroy();
       game.stats.coins += isBoss ? 10 : 2;
       game.stats.xp += xp;
@@ -614,12 +704,47 @@ game.onUpdate((dt) => {
     }
   }
 
-  // Remove destroyed enemies from array
+  // Update projectiles — wall collision + lifetime
+  const now = performance.now() / 1000;
+  for (const p of state.projectiles) {
+    if (!p.sprite.exists) continue;
+
+    if (now - p.birth > PROJECTILE_LIFETIME) {
+      p.sprite.destroy();
+      continue;
+    }
+
+    const nx = p.sprite.x + p.sprite.vx * dt;
+    const ny = p.sprite.y + p.sprite.vy * dt;
+    if (game.spriteCollidesWithMap(p.sprite, nx, ny)) {
+      p.sprite.destroy();
+    } else {
+      p.sprite.x = nx;
+      p.sprite.y = ny;
+    }
+  }
+
+  // Remove destroyed sprites from arrays
   state.enemies = state.enemies.filter(e => e.exists);
   state.items = state.items.filter(i => i.exists);
+  state.projectiles = state.projectiles.filter(p => p.sprite.exists);
+
+  // Check player death
+  const hp = state.player.hp ?? 100;
+  if (hp <= 0) {
+    game.particles.emit('death_burst', state.player.x + state.player.width / 2, state.player.y);
+    game.floatText(state.player.x + state.player.width / 2, state.player.y, 'YOU DIED', { color: 0xff0000, style: 'pop', duration: 1.5, scale: 0.6 });
+    state.player.hp = 100;
+    game.stats.coins = 0;
+    game.stats.keys = 0;
+    loadRoom('village');
+    return;
+  }
+
+  // Update player HP bar
+  state.player.hpBarValue = hp / 100;
 
   // Update stats display
-  const hp = state.player.hp ?? 100;
   const room = ROOMS[state.currentRoom];
   statsEl.innerHTML = `
     HP: ${hp}<br>
@@ -645,6 +770,8 @@ window.addEventListener('keydown', (e) => {
       advanceDialogue();
     } else if (state.nearbyNPC) {
       startDialogue(state.nearbyNPC);
+    } else {
+      fireProjectile();
     }
   }
 

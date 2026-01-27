@@ -67,6 +67,7 @@ export type {
   FloatTextStyle,
   FloatTextAction,
   LabelVisible,
+  ParticleEmitterDef,
 } from './types';
 
 // Re-export from network for convenience

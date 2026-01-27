@@ -186,46 +186,51 @@ function patternSpecificity(pattern: string): number {
 /**
  * Apply collision action to sprites.
  */
+/**
+ * Apply collision action for pattern [A]:[B] — "A encounters B".
+ *
+ * Effects (damage, heal, knockback, flash) target A (the subject).
+ * Removal (destroy, collect) targets B (the thing encountered).
+ * Float text appears above A.
+ */
 export function applyCollisionAction(
   action: CollisionAction,
-  target: Sprite,
-  source: Sprite,
+  a: Sprite,
+  b: Sprite,
   game: {
     stats: Record<string, number>;
     sounds: { play: (sound: string, options?: { x?: number }) => void };
     floatText?: (x: number, y: number, text: string, options?: FloatTextOptions) => void;
   }
 ): void {
-  // Damage
-  if (action.damage !== undefined && target.hp !== undefined) {
-    target.hp = Math.max(0, target.hp - action.damage);
+  // Damage — A takes damage from encountering B
+  if (action.damage !== undefined && a.hp !== undefined) {
+    a.hp = Math.max(0, a.hp - action.damage);
   }
 
-  // Heal
-  if (action.heal !== undefined && target.hp !== undefined) {
-    target.hp += action.heal;
-    // Clamp to max if we had access to it
+  // Heal — A is healed by encountering B
+  if (action.heal !== undefined && a.hp !== undefined) {
+    a.hp += action.heal;
   }
 
-  // Knockback
+  // Knockback — A is pushed away from B
   if (action.knockback !== undefined) {
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const force = action.knockback;
 
-    // Apply velocity impulse
-    target.vx += (dx / dist) * force;
-    target.vy += (dy / dist) * force;
+    a.vx += (dx / dist) * force;
+    a.vy += (dy / dist) * force;
   }
 
-  // Flash (handled by renderer - set a flash timer on sprite)
+  // Flash — A flashes
   if (action.flash !== undefined) {
-    target.data._flashUntil = Date.now() + action.flash * 1000;
-    target.data._flashColor = 0xff0000;
+    a.data._flashUntil = Date.now() + action.flash * 1000;
+    a.data._flashColor = 0xff0000;
   }
 
-  // Collect
+  // Collect — increment stat (B is consumed)
   if (action.collect !== undefined) {
     const stat = action.collect;
     if (game.stats[stat] !== undefined) {
@@ -233,23 +238,23 @@ export function applyCollisionAction(
     }
   }
 
-  // Destroy
+  // Destroy — B is removed (the encountered object)
   if (action.destroy) {
     if (action.animation) {
-      target.playOverride(action.animation, {
+      b.playOverride(action.animation, {
         loop: false,
-        onComplete: () => target.destroy(),
+        onComplete: () => b.destroy(),
       });
     } else {
-      target.destroy();
+      b.destroy();
     }
   }
 
-  // Float text
+  // Float text — shown above A (the subject)
   if (action.floatText && game.floatText) {
     const opts = typeof action.floatText === 'object' ? action.floatText : {};
-    const cx = target.x + target.width / 2;
-    const ty = target.y;
+    const cx = a.x + a.width / 2;
+    const ty = a.y;
 
     if (action.damage !== undefined) {
       game.floatText(cx, ty, `-${action.damage}`, {
