@@ -13,6 +13,7 @@
 
 export const spriteVertexShader = /*glsl*/ `#version 300 es
 precision highp float;
+precision highp int;
 
 // Per-vertex (quad geometry)
 layout(location = 0) in vec2 a_position;  // 0,0 to 1,1
@@ -190,6 +191,7 @@ void main() {
 
 export const spriteFragmentShader = /*glsl*/ `#version 300 es
 precision highp float;
+precision highp int;
 
 uniform sampler2D u_atlas;
 uniform int u_shadowPass;
