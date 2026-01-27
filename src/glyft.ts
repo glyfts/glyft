@@ -37,7 +37,8 @@ import { createMusicManager, type MusicManager } from './music';
 import { CameraImpl } from './camera';
 import { InputImpl } from './input';
 import { TweenManager, type TweenProps, type TweenOptions } from './tween';
-import { createFloatTextManager, type FloatTextManager } from './floattext';
+import { createFloatTextManager, generateFontAtlas, type FloatTextManager, type FontAtlas } from './floattext';
+import { createLabelManager, type LabelManager, type LabelSpriteData } from './labels';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -86,6 +87,12 @@ interface InternalSprite {
   frameY: number;
   frameW: number;
   frameH: number;
+  // Label
+  labelText: string | null;
+  labelColor: number;
+  labelVisible: string;
+  labelRange: number;
+  labelSlot: number;
   // Pointer event listeners (lazily allocated)
   _listeners: Record<string, ((e: SpritePointerEvent) => void)[]> | null;
 }
@@ -146,7 +153,9 @@ export class GlyftEngine {
   private _musicManager: MusicManager;
   private _collisionSystem: CollisionSystem | null = null;
   private _tweenManager: TweenManager = new TweenManager();
+  private _fontAtlas!: FontAtlas;
   private _floatTextManager!: FloatTextManager;
+  private _labelManager!: LabelManager;
 
   // Depth sorting
   private _depthSortCounter = 0;
@@ -205,7 +214,9 @@ export class GlyftEngine {
     this._input = new InputImpl(canvas);
     this._soundManager = createSoundManager(config.settings.viewport[0]);
     this._musicManager = createMusicManager();
-    this._floatTextManager = createFloatTextManager(this.gl);
+    this._fontAtlas = generateFontAtlas(this.gl);
+    this._floatTextManager = createFloatTextManager(this.gl, this._fontAtlas);
+    this._labelManager = createLabelManager(this.gl, this._fontAtlas);
 
     // Pointer event dispatch (click → sprite callbacks + game-level event)
     canvas.addEventListener('pointerdown', (e) => {
@@ -950,6 +961,11 @@ export class GlyftEngine {
       frameY: resolvedFrame.y,
       frameW: resolvedFrame.w,
       frameH: resolvedFrame.h,
+      labelText: null,
+      labelColor: 0xffffff,
+      labelVisible: 'always',
+      labelRange: 80,
+      labelSlot: -1,
       _listeners: null,
     };
 
@@ -1028,6 +1044,33 @@ export class GlyftEngine {
       set bobSpeed(v: number) { sprite.bobSpeed = Math.min(25.5, Math.max(0, v)); },
       get shadow() { return sprite.shadow; },
       set shadow(v: boolean) { sprite.shadow = v; },
+      get label() { return sprite.labelText; },
+      set label(v: string | null) {
+        if (v === sprite.labelText) return;
+        sprite.labelText = v;
+        if (v !== null) {
+          if (sprite.labelSlot === -1) {
+            sprite.labelSlot = self._labelManager.allocSlot(sprite.id);
+          }
+          if (sprite.labelSlot >= 0) {
+            self._labelManager.setLabel(sprite.labelSlot, v, sprite.labelColor);
+          }
+        } else if (sprite.labelSlot >= 0) {
+          self._labelManager.freeSlot(sprite.labelSlot);
+          sprite.labelSlot = -1;
+        }
+      },
+      get labelColor() { return sprite.labelColor; },
+      set labelColor(v: number) {
+        sprite.labelColor = v;
+        if (sprite.labelText !== null && sprite.labelSlot >= 0) {
+          self._labelManager.setLabel(sprite.labelSlot, sprite.labelText, v);
+        }
+      },
+      get labelVisible(): import('./types').LabelVisible { return sprite.labelVisible as import('./types').LabelVisible; },
+      set labelVisible(v: import('./types').LabelVisible) { sprite.labelVisible = v; },
+      get labelRange() { return sprite.labelRange; },
+      set labelRange(v: number) { sprite.labelRange = v; },
       get atlas() { return self._createAtlasProxy(sprite.atlas); },
       get exists() { return sprite.exists; },
       get width() { return sprite.frameW; },
@@ -1091,6 +1134,10 @@ export class GlyftEngine {
       destroy() {
         if (self._hoveredSprite === sprite) {
           self._hoveredSprite = null;
+        }
+        if (sprite.labelSlot >= 0) {
+          self._labelManager.freeSlot(sprite.labelSlot);
+          sprite.labelSlot = -1;
         }
         sprite._listeners = null;
         sprite.exists = false;
@@ -1902,7 +1949,16 @@ export class GlyftEngine {
     // Render sprites
     this._renderSprites(projection);
 
-    // Render floating text (on top of sprites)
+    // Render labels (above sprites, below float text)
+    this._labelManager.updatePositions(
+      this._sprites as unknown as Map<string, LabelSpriteData>,
+      this._camera.x, this._camera.y,
+      viewport[0], viewport[1],
+      this._hoveredSprite?.id ?? null,
+    );
+    this._labelManager.render(projection, this._camera.x, this._camera.y);
+
+    // Render floating text (on top of everything)
     this._floatTextManager.render(projection, this._time, this._camera.x, this._camera.y);
   }
 

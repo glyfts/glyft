@@ -267,6 +267,9 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
     npc.tint = 0x66ff66; // Green for NPCs
     npc.tags = ['npc', 'friendly'];
     npc.data.dialogue = npcData.dialogue;
+    const npcName = (npcData.dialogue as string).charAt(0).toUpperCase() + (npcData.dialogue as string).slice(1);
+    npc.label = npcName;
+    npc.labelColor = 0x66ff66;
     state.npcs.push(npc);
   }
 
@@ -281,10 +284,14 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
       enemy.scale = 1.5;
       enemy.hp = 100;
       enemy.tags = ['enemy', 'hostile', 'boss'];
+      enemy.label = 'Boss';
+      enemy.labelColor = 0xff00ff;
     } else {
       enemy.tint = 0xff6666; // Red for regular enemies
       enemy.hp = 30;
       enemy.tags = ['enemy', 'hostile'];
+      enemy.label = 'Slime';
+      enemy.labelColor = 0xff6666;
     }
 
     state.enemies.push(enemy);
@@ -305,16 +312,25 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
       case 'coin':
         item.tint = 0xffcc00;
         item.tags = ['item', 'collectible'];
+        item.label = 'Coin';
+        item.labelColor = 0xffcc00;
         break;
       case 'key':
         item.tint = 0x00ccff;
         item.tags = ['item', 'collectible', 'key'];
+        item.label = 'Key';
+        item.labelColor = 0x00ccff;
         break;
       case 'heart':
         item.tint = 0xff6699;
         item.tags = ['item', 'collectible', 'heal'];
+        item.label = 'Heart';
+        item.labelColor = 0xff6699;
         break;
     }
+
+    item.labelVisible = 'proximity';
+    item.labelRange = 60;
 
     state.items.push(item);
   }
@@ -323,6 +339,8 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
   if (!state.player) {
     state.player = game.createSprite(atlas, 'player');
     state.player.tags = ['player'];
+    state.player.label = 'Hero';
+    state.player.labelColor = 0xffffff;
   }
 
   state.player.x = (spawnX ?? Math.floor(room.width / 2)) * 16;

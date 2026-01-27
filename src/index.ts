@@ -66,6 +66,7 @@ export type {
   FloatTextOptions,
   FloatTextStyle,
   FloatTextAction,
+  LabelVisible,
 } from './types';
 
 // Re-export from network for convenience

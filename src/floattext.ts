@@ -29,7 +29,7 @@ const _packBuf = new ArrayBuffer(4);
 const _packU32 = new Uint32Array(_packBuf);
 const _packF32 = new Float32Array(_packBuf);
 
-function packColorF32(rgb: number): number {
+export function packColorF32(rgb: number): number {
   _packU32[0] = rgb & 0xFFFFFF;
   return _packF32[0];
 }
@@ -46,10 +46,18 @@ function nextPow2(v: number): number {
   return p;
 }
 
-interface CharMetric {
+export interface CharMetric {
   x: number;
   w: number;
   advance: number;
+}
+
+export interface FontAtlas {
+  texture: WebGLTexture;
+  width: number;
+  height: number;
+  metrics: Map<string, CharMetric>;
+  charHeight: number;
 }
 
 interface TextParticle {
@@ -66,7 +74,7 @@ export interface FloatTextManager {
   render(projection: Float32Array, time: number, cameraX: number, cameraY: number): void;
 }
 
-function generateFontAtlas(gl: WebGL2RenderingContext) {
+export function generateFontAtlas(gl: WebGL2RenderingContext): FontAtlas {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;
 
@@ -123,8 +131,8 @@ function generateFontAtlas(gl: WebGL2RenderingContext) {
   return { texture, width: atlasW, height: atlasH, metrics, charHeight };
 }
 
-export function createFloatTextManager(gl: WebGL2RenderingContext): FloatTextManager {
-  const atlas = generateFontAtlas(gl);
+export function createFloatTextManager(gl: WebGL2RenderingContext, sharedAtlas?: FontAtlas): FloatTextManager {
+  const atlas = sharedAtlas ?? generateFontAtlas(gl);
 
   const shader = compileShader(
     gl,

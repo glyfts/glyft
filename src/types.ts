@@ -168,6 +168,9 @@ export interface FloatTextOptions {
 /** Config for floatText in collision actions: true = auto, or override options */
 export type FloatTextAction = boolean | FloatTextOptions;
 
+/** Label visibility mode */
+export type LabelVisible = 'always' | 'hover' | 'proximity';
+
 /** Collision action */
 export interface CollisionAction {
   damage?: number;
@@ -376,6 +379,18 @@ export interface Sprite {
 
   /** Render a dark ellipse shadow at sprite base position. */
   shadow: boolean;
+
+  /** Text label displayed above sprite (null = no label). Max 16 characters. */
+  label: string | null;
+
+  /** Label text color as 0xRRGGBB (default: 0xffffff) */
+  labelColor: number;
+
+  /** Label visibility mode (default: 'always') */
+  labelVisible: LabelVisible;
+
+  /** Proximity range in pixels for 'proximity' mode (default: 80) */
+  labelRange: number;
 
   /**
    * Tags for collision/sound pattern matching.
