@@ -63,6 +63,9 @@ export type {
   Direction,
   Direction8,
   SpritePointerEvent,
+  FloatTextOptions,
+  FloatTextStyle,
+  FloatTextAction,
 } from './types';
 
 // Re-export from network for convenience

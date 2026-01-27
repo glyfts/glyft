@@ -4,7 +4,7 @@
  * Pattern-based collision rules with built-in actions.
  */
 
-import type { CollisionAction, Sprite } from './types';
+import type { CollisionAction, FloatTextOptions, Sprite } from './types';
 
 export interface CollisionPair {
   a: string; // sprite id
@@ -193,6 +193,7 @@ export function applyCollisionAction(
   game: {
     stats: Record<string, number>;
     sounds: { play: (sound: string, options?: { x?: number }) => void };
+    floatText?: (x: number, y: number, text: string, options?: FloatTextOptions) => void;
   }
 ): void {
   // Damage
@@ -241,6 +242,30 @@ export function applyCollisionAction(
       });
     } else {
       target.destroy();
+    }
+  }
+
+  // Float text
+  if (action.floatText && game.floatText) {
+    const opts = typeof action.floatText === 'object' ? action.floatText : {};
+    const cx = target.x + target.width / 2;
+    const ty = target.y;
+
+    if (action.damage !== undefined) {
+      game.floatText(cx, ty, `-${action.damage}`, {
+        color: opts.color ?? 0xff4444, style: opts.style ?? 'pop',
+        duration: opts.duration ?? 0.8, speed: opts.speed ?? 25, scale: opts.scale,
+      });
+    } else if (action.heal !== undefined) {
+      game.floatText(cx, ty, `+${action.heal}`, {
+        color: opts.color ?? 0x44ff44, style: opts.style ?? 'pop',
+        duration: opts.duration ?? 0.8, speed: opts.speed ?? 25, scale: opts.scale,
+      });
+    } else if (action.collect !== undefined) {
+      game.floatText(cx, ty, `+1`, {
+        color: opts.color ?? 0xffdd44, style: opts.style ?? 'rise',
+        duration: opts.duration ?? 1.0, speed: opts.speed ?? 30, scale: opts.scale,
+      });
     }
   }
 }

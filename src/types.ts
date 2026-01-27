@@ -148,6 +148,26 @@ export interface AnimationDef {
   row?: number;
 }
 
+/** Float text display style */
+export type FloatTextStyle = 'rise' | 'pop';
+
+/** Options for floating text */
+export interface FloatTextOptions {
+  /** Text color as 0xRRGGBB (default: 0xffffff) */
+  color?: number;
+  /** Animation style (default: 'rise') */
+  style?: FloatTextStyle;
+  /** Duration in seconds (default: 1.0) */
+  duration?: number;
+  /** Rise speed in pixels/second (default: 30) */
+  speed?: number;
+  /** Font scale multiplier (default: 1) */
+  scale?: number;
+}
+
+/** Config for floatText in collision actions: true = auto, or override options */
+export type FloatTextAction = boolean | FloatTextOptions;
+
 /** Collision action */
 export interface CollisionAction {
   damage?: number;
@@ -158,8 +178,10 @@ export interface CollisionAction {
   animation?: string;
   collect?: string;
   cooldown?: number;
-  /** Attract sprite A toward sprite B when within range (px). Speed in px/s. */
+  /** Attract sprite B toward sprite A when within range (px). Speed in px/s. */
   magnetize?: { range: number; speed: number };
+  /** Show floating text on collision. true = auto from damage/heal/collect. */
+  floatText?: FloatTextAction;
 }
 
 /** Custom handler function */
@@ -653,6 +675,8 @@ export interface Glyft {
    * @param options - Easing, callbacks, delay
    */
   tween(target: object, props: { x?: number; y?: number; alpha?: number; scale?: number; rotation?: number }, duration: number, options?: { ease?: string; onUpdate?: (t: object) => void; onComplete?: (t: object) => void; delay?: number }): { cancel(): void; readonly active: boolean };
+  /** Spawn floating text at world position */
+  floatText(x: number, y: number, text: string, options?: FloatTextOptions): void;
   /** Register update callback */
   onUpdate(callback: (dt: number) => void): void;
   /** Start game loop */

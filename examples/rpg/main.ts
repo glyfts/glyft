@@ -127,6 +127,7 @@ const config: GlyftConfig = {
     hp: { default: 100, max: 100 },
     coins: { default: 0 },
     keys: { default: 0 },
+    xp: { default: 0 },
   },
 
   // Reactive sounds
@@ -149,8 +150,8 @@ const config: GlyftConfig = {
   // Collision rules
   collisions: {
     // Combat - player takes damage from enemies
-    '[player]:[enemy]': { damage: 10, knockback: 80, flash: 0.2, cooldown: 0.5 },
-    '[player]:[boss]': { damage: 25, knockback: 120, flash: 0.3, cooldown: 0.8 },
+    '[player]:[enemy]': { damage: 10, knockback: 80, flash: 0.2, cooldown: 0.5, floatText: { scale: 0.5 } },
+    '[player]:[boss]': { damage: 25, knockback: 120, flash: 0.3, cooldown: 0.8, floatText: { scale: 0.5 } },
 
     // Collection - items magnetize toward player then collect on touch
     '[player]:[collectible]': { magnetize: { range: 48, speed: 80 }, collect: 'coins', destroy: true },
@@ -571,8 +572,27 @@ game.onUpdate((dt) => {
 
     // Check if enemy died
     if (enemy.hp !== undefined && enemy.hp <= 0) {
+      const isBoss = enemy.tags.includes('boss');
+      const xp = isBoss ? 50 : 10;
+      const cx = enemy.x + enemy.width / 2;
+      game.floatText(cx, enemy.y, `+${xp} XP`, { color: 0xaa88ff, style: 'rise', duration: 1.2, scale: 0.5 });
       enemy.destroy();
-      game.stats.coins += enemy.tags.includes('boss') ? 10 : 2;
+      game.stats.coins += isBoss ? 10 : 2;
+      game.stats.xp += xp;
+    }
+  }
+
+  // Float text for collected items
+  for (const item of state.items) {
+    if (!item.exists) {
+      const cx = item.x + item.width / 2;
+      if (item.tags.includes('key')) {
+        game.floatText(cx, item.y, '+1 Key', { color: 0x00ccff, style: 'rise', scale: 0.5 });
+      } else if (item.tags.includes('heal')) {
+        game.floatText(cx, item.y, '+25 HP', { color: 0xff6699, style: 'pop', scale: 0.5 });
+      } else {
+        game.floatText(cx, item.y, '+1G', { color: 0xffcc00, style: 'rise', scale: 0.5 });
+      }
     }
   }
 
@@ -587,6 +607,7 @@ game.onUpdate((dt) => {
     HP: ${hp}<br>
     Coins: ${game.stats.coins}<br>
     Keys: ${game.stats.keys}<br>
+    XP: ${game.stats.xp}<br>
     <br>
     Room: ${room.name}<br>
     ${state.nearbyNPC ? '<span style="color:#4a9">[SPACE] Talk</span>' : ''}

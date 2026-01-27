@@ -37,6 +37,7 @@ import { createMusicManager, type MusicManager } from './music';
 import { CameraImpl } from './camera';
 import { InputImpl } from './input';
 import { TweenManager, type TweenProps, type TweenOptions } from './tween';
+import { createFloatTextManager, type FloatTextManager } from './floattext';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -145,6 +146,7 @@ export class GlyftEngine {
   private _musicManager: MusicManager;
   private _collisionSystem: CollisionSystem | null = null;
   private _tweenManager: TweenManager = new TweenManager();
+  private _floatTextManager!: FloatTextManager;
 
   // Depth sorting
   private _depthSortCounter = 0;
@@ -203,6 +205,7 @@ export class GlyftEngine {
     this._input = new InputImpl(canvas);
     this._soundManager = createSoundManager(config.settings.viewport[0]);
     this._musicManager = createMusicManager();
+    this._floatTextManager = createFloatTextManager(this.gl);
 
     // Pointer event dispatch (click → sprite callbacks + game-level event)
     canvas.addEventListener('pointerdown', (e) => {
@@ -1265,6 +1268,11 @@ export class GlyftEngine {
     this._tweenManager.cancelAll(target as Record<string, unknown>);
   }
 
+  /** Spawn floating text at world position */
+  floatText(x: number, y: number, text: string, options?: import('./types').FloatTextOptions): void {
+    this._floatTextManager.spawn(x, y, text, this._time, options);
+  }
+
   // ---------------------------------------------------------------------------
   // Collision
   // ---------------------------------------------------------------------------
@@ -1467,6 +1475,9 @@ export class GlyftEngine {
 
     // Run reactive sound triggers
     this._updateReactiveSounds();
+
+    // Update floating text (expire old particles)
+    this._floatTextManager.update(this._time);
 
     // Render
     this._render();
@@ -1696,6 +1707,7 @@ export class GlyftEngine {
         applyCollisionAction(action, proxyB, proxyA, {
           stats: this._stats,
           sounds: this.sounds,
+          floatText: (x, y, text, opts) => this._floatTextManager.spawn(x, y, text, this._time, opts),
         });
 
         // Play collision sound if defined in sound rules
@@ -1889,6 +1901,9 @@ export class GlyftEngine {
 
     // Render sprites
     this._renderSprites(projection);
+
+    // Render floating text (on top of sprites)
+    this._floatTextManager.render(projection, this._time, this._camera.x, this._camera.y);
   }
 
   private _calculateProjection(): Float32Array {
