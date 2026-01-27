@@ -165,9 +165,9 @@ void main() {
     float shadowW = frameSize.x * scale * 0.8 * shadowExpand;
     float shadowH = frameSize.x * scale * 0.25 * shadowExpand;
     vec2 shadowLocal = a_position * vec2(shadowW, shadowH);
-    // Center shadow under sprite base
+    // Center shadow under sprite base (top of shadow aligns with sprite bottom)
     float offsetX = (frameSize.x * scale - shadowW) * 0.5;
-    float offsetY = frameSize.y * scale - shadowH * 0.5;
+    float offsetY = frameSize.y * scale;
     vec2 worldPos = pos + vec2(offsetX, offsetY) + shadowLocal - u_cameraPos;
     // Fade shadow when sprite is high (farther from ground)
     v_alpha = clamp(1.0 - bobOffset * 0.03, 0.5, 1.0);

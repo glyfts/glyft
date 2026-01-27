@@ -1613,24 +1613,25 @@ export class GlyftEngine {
         if (sprite.tags.includes(rule.tagB)) this._magnetizeGroupB.push(sprite);
       }
 
-      // Move A toward closest B when in range
-      for (const a of this._magnetizeGroupA) {
+      // Move B toward closest A when in range
+      // (B = second pattern element = collision target, consistent with action semantics)
+      for (const b of this._magnetizeGroupB) {
         let bestDist = rule.range;
-        let bestB: InternalSprite | null = null;
+        let bestA: InternalSprite | null = null;
 
-        for (const b of this._magnetizeGroupB) {
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
+        for (const a of this._magnetizeGroupA) {
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < bestDist) { bestDist = dist; bestB = b; }
+          if (dist < bestDist) { bestDist = dist; bestA = a; }
         }
 
-        if (bestB && bestDist > 1) {
-          const dx = bestB.x - a.x;
-          const dy = bestB.y - a.y;
+        if (bestA && bestDist > 1) {
+          const dx = bestA.x - b.x;
+          const dy = bestA.y - b.y;
           const move = Math.min(rule.speed * dt, bestDist);
-          a.x += (dx / bestDist) * move;
-          a.y += (dy / bestDist) * move;
+          b.x += (dx / bestDist) * move;
+          b.y += (dy / bestDist) * move;
         }
       }
     }
