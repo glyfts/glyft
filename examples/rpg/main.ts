@@ -153,9 +153,9 @@ const config: GlyftConfig = {
     '[player]:[boss]': { damage: 25, knockback: 120, flash: 0.3, cooldown: 0.8 },
 
     // Collection - items magnetize toward player then collect on touch
-    '[player]:[collectible]': { magnetize: { range: 48, speed: 120 }, collect: 'coins', destroy: true },
-    '[player]:[key]': { magnetize: { range: 48, speed: 120 }, collect: 'keys', destroy: true },
-    '[player]:[heal]': { magnetize: { range: 48, speed: 120 }, heal: 25, destroy: true },
+    '[collectible]:[player]': { magnetize: { range: 48, speed: 80 }, collect: 'coins', destroy: true },
+    '[key]:[player]': { magnetize: { range: 48, speed: 80 }, collect: 'keys', destroy: true },
+    '[heal]:[player]': { magnetize: { range: 48, speed: 80 }, heal: 25, destroy: true },
 
     // NPC interaction handled via custom handler
     '[player]:[npc]': 'interactNPC',
