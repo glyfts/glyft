@@ -61,6 +61,9 @@ interface InternalSprite {
   sounds: boolean;
   interactive: boolean;
   hitbox: { x: number; y: number; w: number; h: number } | null;
+  bob: number;
+  bobSpeed: number;
+  shadow: boolean;
   atlas: InternalAtlas;
   exists: boolean;
   // Named animation registry
@@ -917,6 +920,9 @@ export class GlyftEngine {
       sounds: true,
       interactive: false,
       hitbox: null,
+      bob: 0,
+      bobSpeed: 1.5,
+      shadow: false,
       atlas: internalAtlas,
       exists: true,
       animations: new Map(),
@@ -1007,6 +1013,12 @@ export class GlyftEngine {
       set interactive(v: boolean) { sprite.interactive = v; },
       get hitbox() { return sprite.hitbox; },
       set hitbox(v: { x: number; y: number; w: number; h: number } | null) { sprite.hitbox = v; },
+      get bob() { return sprite.bob; },
+      set bob(v: number) { sprite.bob = Math.min(255, Math.max(0, v)); },
+      get bobSpeed() { return sprite.bobSpeed; },
+      set bobSpeed(v: number) { sprite.bobSpeed = Math.min(25.5, Math.max(0, v)); },
+      get shadow() { return sprite.shadow; },
+      set shadow(v: boolean) { sprite.shadow = v; },
       get atlas() { return self._createAtlasProxy(sprite.atlas); },
       get exists() { return sprite.exists; },
       get width() { return sprite.frameW; },
@@ -1733,7 +1745,7 @@ export class GlyftEngine {
       this.gl,
       spriteVertexShader,
       spriteFragmentShader,
-      ['u_projection', 'u_time', 'u_atlasSize', 'u_cameraPos', 'u_spriteMode', 'u_atlas'],
+      ['u_projection', 'u_time', 'u_atlasSize', 'u_cameraPos', 'u_spriteMode', 'u_atlas', 'u_shadowPass'],
       ['a_position', 'a_posVel', 'a_frame', 'a_props', 'a_anim']
     );
 
@@ -1899,6 +1911,7 @@ export class GlyftEngine {
     gl.uniform1f(this._spriteShader.uniforms.u_time, this._time);
     gl.uniform2f(this._spriteShader.uniforms.u_cameraPos, this._camera.x, this._camera.y);
     gl.uniform1i(this._spriteShader.uniforms.u_spriteMode, this._getSpriteMode());
+    gl.uniform1i(this._spriteShader.uniforms.u_shadowPass, 0);
 
     // Render each atlas group
     for (const [atlas, sprites] of spritesByAtlas) {
@@ -1923,6 +1936,8 @@ export class GlyftEngine {
   // Reusable buffer for tint packing (avoids per-frame allocation)
   private _tintU32 = new Uint32Array(1);
   private _tintF32 = new Float32Array(this._tintU32.buffer);
+  private _flagsU32 = new Uint32Array(1);
+  private _flagsF32 = new Float32Array(this._flagsU32.buffer);
 
   private _renderSpriteGroup(atlas: InternalAtlas, sprites: InternalSprite[]): void {
     const gl = this.gl;
@@ -1931,10 +1946,12 @@ export class GlyftEngine {
     // Per-instance: posVel(4) + frame(4) + props(4) + anim(4) = 16 floats = 64 bytes
     const FLOATS_PER_INSTANCE = 16;
     const instanceData = new Float32Array(sprites.length * FLOATS_PER_INSTANCE);
+    let hasShadows = false;
 
     for (let i = 0; i < sprites.length; i++) {
       const sprite = sprites[i];
       const offset = i * FLOATS_PER_INSTANCE;
+      if (sprite.shadow) hasShadows = true;
 
       // Check for named animation override — CPU drives the frame
       const namedAnim = sprite.animOverride ? sprite.animations.get(sprite.animOverride) : null;
@@ -1964,8 +1981,12 @@ export class GlyftEngine {
         // hasOverride = 1 so shader uses idle frame at computed position
         const flipXFlag = sprite.flipX ? 2 : 0;
         const flipYFlag = sprite.flipY ? 4 : 0;
+        const shadowBit = sprite.shadow ? 8 : 0;
         const lastDirBits = (0 & 0xF) << 8; // row 0 — already baked into frame position
-        instanceData[offset + 15] = 1 | flipXFlag | flipYFlag | lastDirBits;
+        const bobAmpBits = (Math.round(sprite.bob) & 0xFF) << 12;
+        const bobSpdBits = (Math.round(sprite.bobSpeed * 10) & 0xFF) << 20;
+        this._flagsU32[0] = 1 | flipXFlag | flipYFlag | shadowBit | lastDirBits | bobAmpBits | bobSpdBits;
+        instanceData[offset + 15] = this._flagsF32[0];
       } else {
         // Velocity-driven GPU animation (standard path)
         instanceData[offset + 4] = sprite.frameX;
@@ -1982,12 +2003,16 @@ export class GlyftEngine {
           }
         }
 
-        // a_anim: idleFrames, walkFrames, fps, flags
+        // a_anim: idleFrames, walkFrames, fps, flags (bit-cast uint32 → float)
         const hasOverride = sprite.animOverride !== null ? 1 : 0;
         const flipXFlag = sprite.flipX ? 2 : 0;
         const flipYFlag = sprite.flipY ? 4 : 0;
+        const shadowBit = sprite.shadow ? 8 : 0;
         const lastDirBits = (sprite.lastDirection & 0xF) << 8;
-        instanceData[offset + 15] = hasOverride | flipXFlag | flipYFlag | lastDirBits;
+        const bobAmpBits = (Math.round(sprite.bob) & 0xFF) << 12;
+        const bobSpdBits = (Math.round(sprite.bobSpeed * 10) & 0xFF) << 20;
+        this._flagsU32[0] = hasOverride | flipXFlag | flipYFlag | shadowBit | lastDirBits | bobAmpBits | bobSpdBits;
+        instanceData[offset + 15] = this._flagsF32[0];
 
         instanceData[offset + 12] = sprite.idleFrames;
         instanceData[offset + 13] = sprite.walkFrames;
@@ -2039,7 +2064,12 @@ export class GlyftEngine {
     gl.uniform1i(this._spriteShader.uniforms.u_atlas, 0);
     gl.uniform2f(this._spriteShader.uniforms.u_atlasSize, atlas.width, atlas.height);
 
-    // Draw all sprites in one call
+    // Two-pass rendering: shadows first (behind sprites), then sprites with bob
+    if (hasShadows) {
+      gl.uniform1i(this._spriteShader.uniforms.u_shadowPass, 1);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, sprites.length);
+    }
+    gl.uniform1i(this._spriteShader.uniforms.u_shadowPass, 0);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, sprites.length);
 
     gl.bindVertexArray(null);

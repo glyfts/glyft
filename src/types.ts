@@ -344,6 +344,15 @@ export interface Sprite {
   /** Flip sprite vertically */
   flipY: boolean;
 
+  /** Bob amplitude in pixels (0 = off). GPU-driven sinusoidal Y oscillation. */
+  bob: number;
+
+  /** Bob frequency in Hz (default 1.5). */
+  bobSpeed: number;
+
+  /** Render a dark ellipse shadow at sprite base position. */
+  shadow: boolean;
+
   /**
    * Tags for collision/sound pattern matching.
    * @example ['player'], ['enemy', 'boss'], ['item', 'collectible']

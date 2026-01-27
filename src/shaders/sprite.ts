@@ -29,10 +29,13 @@ uniform float u_time;
 uniform vec2 u_atlasSize;
 uniform vec2 u_cameraPos;
 uniform int u_spriteMode;  // 0=4dir, 1=8dir, 2=2dir-side, 3=2dir-top, 4=1dir
+uniform int u_shadowPass;
 
 out vec2 v_texCoord;
 out float v_alpha;
 out vec3 v_tint;
+out vec2 v_localUV;
+out float v_hasShadow;
 
 // Unpack tint from float (RGB packed into 32 bits)
 vec3 unpackTint(float packed) {
@@ -85,11 +88,15 @@ void main() {
   float fps = a_anim.z;
   float flags = a_anim.w;
 
-  // Decode flags
-  bool hasOverride = (int(flags) & 1) != 0;
-  bool flipX = (int(flags) & 2) != 0;
-  bool flipY = (int(flags) & 4) != 0;
-  int lastDir = (int(flags) >> 8) & 0xF;
+  // Decode flags (bit-cast uint32 packed as float)
+  uint uflags = floatBitsToUint(flags);
+  bool hasOverride = (uflags & 1u) != 0u;
+  bool flipX = (uflags & 2u) != 0u;
+  bool flipY = (uflags & 4u) != 0u;
+  bool hasShadow = (uflags & 8u) != 0u;
+  int lastDir = int((uflags >> 8u) & 0xFu);
+  float bobAmplitude = float((uflags >> 12u) & 0xFFu);
+  float bobSpeed = float((uflags >> 20u) & 0xFFu) * 0.1;
 
   // Determine direction based on velocity and sprite mode
   int direction = 0;
@@ -137,26 +144,47 @@ void main() {
 
   // Calculate texture coordinates
   v_texCoord = (framePos + uv * frameSize) / u_atlasSize;
+  v_localUV = a_position;
+  v_hasShadow = hasShadow ? 1.0 : 0.0;
 
-  // Transform vertex - sprite position is TOP-LEFT corner
-  vec2 localPos = a_position * frameSize * scale;
+  if (u_shadowPass == 1) {
+    // Shadow pass: flat ellipse at sprite base, no bob
+    if (!hasShadow) {
+      v_alpha = 0.0;
+      gl_Position = vec4(0.0);
+      return;
+    }
+    float shadowW = frameSize.x * scale * 0.8;
+    float shadowH = frameSize.x * scale * 0.25;
+    vec2 shadowLocal = a_position * vec2(shadowW, shadowH);
+    float offsetX = (frameSize.x * scale - shadowW) * 0.5;
+    float offsetY = frameSize.y * scale - shadowH;
+    vec2 worldPos = pos + vec2(offsetX, offsetY) + shadowLocal - u_cameraPos;
+    vec3 projected = u_projection * vec3(worldPos, 1.0);
+    gl_Position = vec4(projected.xy, 0.0, 1.0);
+  } else {
+    // Normal pass: sprite with rotation and bob offset
+    vec2 localPos = a_position * frameSize * scale;
+    vec2 center = frameSize * scale * 0.5;
+    vec2 centered = localPos - center;
+    float c = cos(rotation);
+    float s = sin(rotation);
+    vec2 rotatedPos = vec2(
+      centered.x * c - centered.y * s,
+      centered.x * s + centered.y * c
+    ) + center;
 
-  // For rotation, rotate around sprite center
-  vec2 center = frameSize * scale * 0.5;
-  vec2 centered = localPos - center;
-  float c = cos(rotation);
-  float s = sin(rotation);
-  vec2 rotatedPos = vec2(
-    centered.x * c - centered.y * s,
-    centered.x * s + centered.y * c
-  ) + center;
+    float bobOffset = 0.0;
+    if (bobAmplitude > 0.0) {
+      bobOffset = sin(u_time * bobSpeed * 6.28318) * bobAmplitude;
+    }
 
-  // World position (subtract camera)
-  vec2 worldPos = pos + rotatedPos - u_cameraPos;
+    vec2 worldPos = pos + rotatedPos - u_cameraPos;
+    worldPos.y -= bobOffset;
 
-  // Project to clip space
-  vec3 projected = u_projection * vec3(worldPos, 1.0);
-  gl_Position = vec4(projected.xy, 0.0, 1.0);
+    vec3 projected = u_projection * vec3(worldPos, 1.0);
+    gl_Position = vec4(projected.xy, 0.0, 1.0);
+  }
 }
 `;
 
@@ -164,14 +192,28 @@ export const spriteFragmentShader = /*glsl*/ `#version 300 es
 precision highp float;
 
 uniform sampler2D u_atlas;
+uniform int u_shadowPass;
 
 in vec2 v_texCoord;
 in float v_alpha;
 in vec3 v_tint;
+in vec2 v_localUV;
+in float v_hasShadow;
 
 out vec4 fragColor;
 
 void main() {
+  // Shadow pass: render dark ellipse
+  if (u_shadowPass == 1) {
+    if (v_hasShadow < 0.5) discard;
+    vec2 p = (v_localUV - 0.5) * 2.0;
+    float dist = length(p);
+    if (dist > 1.0) discard;
+    float alpha = smoothstep(1.0, 0.5, dist) * 0.35;
+    fragColor = vec4(0.0, 0.0, 0.0, alpha);
+    return;
+  }
+
   vec4 texColor = texture(u_atlas, v_texCoord);
 
   // Discard transparent pixels
