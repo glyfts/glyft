@@ -152,10 +152,10 @@ const config: GlyftConfig = {
     '[player]:[enemy]': { damage: 10, knockback: 80, flash: 0.2, cooldown: 0.5 },
     '[player]:[boss]': { damage: 25, knockback: 120, flash: 0.3, cooldown: 0.8 },
 
-    // Collection - items collected on touch
-    '[player]:[collectible]': { collect: 'coins', destroy: true },
-    '[player]:[key]': { collect: 'keys', destroy: true },
-    '[player]:[heal]': { heal: 25, destroy: true },
+    // Collection - items magnetize toward player then collect on touch
+    '[player]:[collectible]': { magnetize: { range: 48, speed: 120 }, collect: 'coins', destroy: true },
+    '[player]:[key]': { magnetize: { range: 48, speed: 120 }, collect: 'keys', destroy: true },
+    '[player]:[heal]': { magnetize: { range: 48, speed: 120 }, heal: 25, destroy: true },
 
     // NPC interaction handled via custom handler
     '[player]:[npc]': 'interactNPC',
@@ -295,6 +295,10 @@ function loadRoom(roomId: keyof typeof ROOMS, spawnX?: number, spawnY?: number) 
     item.x = itemData.x * 16;
     item.y = itemData.y * 16;
     item.scale = 0.5;
+
+    item.bob = 3;
+    item.bobSpeed = 1.5;
+    item.shadow = true;
 
     switch (itemData.type) {
       case 'coin':
