@@ -149,18 +149,28 @@ void main() {
   v_hasShadow = hasShadow ? 1.0 : 0.0;
 
   if (u_shadowPass == 1) {
-    // Shadow pass: flat ellipse at sprite base, no bob
+    // Shadow pass: flat ellipse at sprite base, scales with bob height
     if (!hasShadow) {
       v_alpha = 0.0;
       gl_Position = vec4(0.0);
       return;
     }
-    float shadowW = frameSize.x * scale * 0.8;
-    float shadowH = frameSize.x * scale * 0.25;
+    // Compute current bob offset (same formula as normal pass)
+    float bobOffset = 0.0;
+    if (bobAmplitude > 0.0) {
+      bobOffset = sin(u_time * bobSpeed * 6.28318) * bobAmplitude;
+    }
+    // Shadow expands when sprite is higher, shrinks when lower
+    float shadowExpand = 1.0 + bobOffset * 0.04;
+    float shadowW = frameSize.x * scale * 0.8 * shadowExpand;
+    float shadowH = frameSize.x * scale * 0.25 * shadowExpand;
     vec2 shadowLocal = a_position * vec2(shadowW, shadowH);
+    // Center shadow under sprite base
     float offsetX = (frameSize.x * scale - shadowW) * 0.5;
     float offsetY = frameSize.y * scale - shadowH;
     vec2 worldPos = pos + vec2(offsetX, offsetY) + shadowLocal - u_cameraPos;
+    // Fade shadow when sprite is high (farther from ground)
+    v_alpha = clamp(1.0 - bobOffset * 0.03, 0.5, 1.0);
     vec3 projected = u_projection * vec3(worldPos, 1.0);
     gl_Position = vec4(projected.xy, 0.0, 1.0);
   } else {
@@ -211,7 +221,7 @@ void main() {
     vec2 p = (v_localUV - 0.5) * 2.0;
     float dist = length(p);
     if (dist > 1.0) discard;
-    float alpha = smoothstep(1.0, 0.5, dist) * 0.35;
+    float alpha = smoothstep(1.0, 0.5, dist) * 0.35 * v_alpha;
     fragColor = vec4(0.0, 0.0, 0.0, alpha);
     return;
   }
