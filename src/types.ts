@@ -158,6 +158,8 @@ export interface CollisionAction {
   animation?: string;
   collect?: string;
   cooldown?: number;
+  /** Attract sprite A toward sprite B when within range (px). Speed in px/s. */
+  magnetize?: { range: number; speed: number };
 }
 
 /** Custom handler function */

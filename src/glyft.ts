@@ -159,6 +159,11 @@ export class GlyftEngine {
   private _hoveredSprite: InternalSprite | null = null;
   private _gameListeners: Record<string, ((e: SpritePointerEvent) => void)[]> = {};
 
+  // Magnetize system
+  private _magnetizeRules: { tagA: string; tagB: string; range: number; speed: number }[] = [];
+  private _magnetizeGroupA: InternalSprite[] = [];
+  private _magnetizeGroupB: InternalSprite[] = [];
+
   // Sound timing (for intervals and cooldowns)
   private _soundLastPlayed: Map<string, number> = new Map(); // pattern -> last time
 
@@ -252,6 +257,7 @@ export class GlyftEngine {
         this._collisionRules.set(pattern, rule);
       }
       this._collisionSystem = createCollisionSystem(this._collisionRules);
+      this._parseMagnetizeRules();
     }
     if (config.music) {
       this._musicManager.define(config.music);
@@ -1405,6 +1411,7 @@ export class GlyftEngine {
       for (const [pattern, rule] of Object.entries(config.collisions)) {
         this._collisionRules.set(pattern, rule);
       }
+      this._parseMagnetizeRules();
     }
   }
 
@@ -1451,6 +1458,9 @@ export class GlyftEngine {
     for (const callback of this._updateCallbacks) {
       callback(this._dt);
     }
+
+    // Run magnetize (attract sprites toward targets)
+    this._updateMagnetize(this._dt);
 
     // Run collision detection
     this._updateCollisions();
@@ -1557,6 +1567,70 @@ export class GlyftEngine {
         sprite.animCurrentFrame = frameIndex;
         if (sprite.animOnFrame) {
           sprite.animOnFrame(frameIndex);
+        }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Magnetize System
+  // ---------------------------------------------------------------------------
+
+  private _parseMagnetizeRules(): void {
+    this._magnetizeRules = [];
+    for (const [pattern, action] of this._collisionRules.entries()) {
+      if (typeof action === 'string' || !action.magnetize) continue;
+      const parts = pattern.split(':');
+      if (parts.length !== 2) continue;
+      const tagA = this._extractTag(parts[0]);
+      const tagB = this._extractTag(parts[1]);
+      if (!tagA || !tagB) continue;
+      this._magnetizeRules.push({
+        tagA,
+        tagB,
+        range: action.magnetize.range,
+        speed: action.magnetize.speed,
+      });
+    }
+  }
+
+  private _extractTag(p: string): string | null {
+    if (p.startsWith('[') && p.endsWith(']')) return p.slice(1, -1);
+    return null;
+  }
+
+  private _updateMagnetize(dt: number): void {
+    if (this._magnetizeRules.length === 0) return;
+
+    for (const rule of this._magnetizeRules) {
+      // Collect sprites by tag (reuse arrays, no allocation)
+      this._magnetizeGroupA.length = 0;
+      this._magnetizeGroupB.length = 0;
+
+      for (const sprite of this._sprites.values()) {
+        if (!sprite.exists) continue;
+        if (sprite.tags.includes(rule.tagA)) this._magnetizeGroupA.push(sprite);
+        if (sprite.tags.includes(rule.tagB)) this._magnetizeGroupB.push(sprite);
+      }
+
+      // Move A toward closest B when in range
+      for (const a of this._magnetizeGroupA) {
+        let bestDist = rule.range;
+        let bestB: InternalSprite | null = null;
+
+        for (const b of this._magnetizeGroupB) {
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < bestDist) { bestDist = dist; bestB = b; }
+        }
+
+        if (bestB && bestDist > 1) {
+          const dx = bestB.x - a.x;
+          const dy = bestB.y - a.y;
+          const move = Math.min(rule.speed * dt, bestDist);
+          a.x += (dx / bestDist) * move;
+          a.y += (dy / bestDist) * move;
         }
       }
     }
