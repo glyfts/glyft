@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glyft - 10K Sprite Benchmark</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: system-ui, sans-serif;
+    }
+    .container {
+      text-align: center;
+    }
+    h1 {
+      color: #eee;
+      margin-bottom: 0.5rem;
+      font-size: 1.5rem;
+    }
+    .stats {
+      color: #4a90d9;
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      font-family: monospace;
+    }
+    canvas {
+      border: 2px solid #333;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      width: 800px;
+      height: 600px;
+    }
+    .info {
+      color: #888;
+      margin-top: 1rem;
+      font-size: 0.875rem;
+    }
+    .controls {
+      margin-top: 1rem;
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+    }
+    button {
+      background: #4a90d9;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    button:hover {
+      background: #357abd;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Glyft - 10K Sprite Benchmark</h1>
+    <div class="stats" id="stats">Loading...</div>
+    <canvas id="game" width="400" height="300"></canvas>
+    <p class="info">All 10,000 sprites animated on GPU - one draw call</p>
+    <div class="controls">
+      <button id="btn1k">1K Sprites</button>
+      <button id="btn5k">5K Sprites</button>
+      <button id="btn10k">10K Sprites</button>
+      <button id="btn25k">25K Sprites</button>
+      <button id="btn50k">50K Sprites</button>
+    </div>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
