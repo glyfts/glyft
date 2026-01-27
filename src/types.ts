@@ -93,6 +93,22 @@ export interface GlyftSettings {
    * @example 0x000000 (black), 0x1a1a2e (dark blue), 0x2d3436 (dark gray)
    */
   backgroundColor?: number;
+
+  /**
+   * Depth sorting mode for sprites.
+   * - `'y'` - Sort by Y position (lower = in front). Good for top-down RPGs.
+   * - `'none'` - No sorting, render in creation order.
+   * @default 'none'
+   */
+  depthSort?: 'y' | 'none';
+
+  /**
+   * How often to perform depth sorting (every N frames).
+   * Higher values reduce CPU cost but may cause brief visual glitches.
+   * Only applies when depthSort is not 'none'.
+   * @default 5
+   */
+  depthSortInterval?: number;
 }
 
 /** Stat definition */
@@ -118,6 +134,18 @@ export interface MusicTrack {
   loop?: boolean;
   fadeIn?: number;
   volume?: number;
+}
+
+/** Named animation definition for override animations */
+export interface AnimationDef {
+  /** Frame indices in the spritesheet row (0-based column indices) */
+  frames: number[];
+  /** Frames per second */
+  fps: number;
+  /** Whether to loop the animation (default: false) */
+  loop?: boolean;
+  /** Which row in the spritesheet to use (overrides direction-based row) */
+  row?: number;
 }
 
 /** Collision action */
@@ -224,6 +252,20 @@ export interface GlyftConfig {
 }
 
 // -----------------------------------------------------------------------------
+// Pointer Event Types
+// -----------------------------------------------------------------------------
+
+/** Pointer event fired on interactive sprites or the game canvas. */
+export interface SpritePointerEvent {
+  /** The sprite involved (non-null for sprite events, null for game-level miss). */
+  sprite: Sprite | null;
+  /** Pointer world X coordinate. */
+  worldX: number;
+  /** Pointer world Y coordinate. */
+  worldY: number;
+}
+
+// -----------------------------------------------------------------------------
 // Core Types
 // -----------------------------------------------------------------------------
 
@@ -326,11 +368,62 @@ export interface Sprite {
   /** Whether this sprite triggers reactive sounds (default: true) */
   sounds: boolean;
 
+  /** Whether this sprite responds to hit-testing/clicks (default: false) */
+  interactive: boolean;
+
+  /**
+   * Custom hitbox override for hit-testing.
+   * Offsets are relative to sprite position (top-left).
+   * If not set, uses the sprite's frame dimensions.
+   */
+  hitbox: { x: number; y: number; w: number; h: number } | null;
+
   /** Reference to the sprite's texture atlas */
   readonly atlas: Atlas;
 
   /** False after destroy() is called */
   readonly exists: boolean;
+
+  /**
+   * Width of the sprite frame in pixels.
+   */
+  readonly width: number;
+
+  /**
+   * Height of the sprite frame in pixels.
+   */
+  readonly height: number;
+
+  /**
+   * Define a named animation for this sprite.
+   *
+   * @param name - Animation name (e.g., 'attack', 'death', 'idle')
+   * @param def - Animation definition (frames, fps, loop)
+   *
+   * @example
+   * ```typescript
+   * sprite.defineAnimation('attack', { frames: [0, 1, 2, 3, 4], fps: 12 });
+   * sprite.defineAnimation('death', { frames: [0, 1, 2], fps: 8, loop: false });
+   * ```
+   */
+  defineAnimation(name: string, def: AnimationDef): void;
+
+  /**
+   * Play a named animation, overriding velocity-driven animation.
+   * The animation must be defined first with defineAnimation().
+   *
+   * @param name - Animation name
+   * @param options - Callbacks
+   *
+   * @example
+   * ```typescript
+   * sprite.defineAnimation('attack', { frames: [0, 1, 2, 3], fps: 12 });
+   * sprite.playAnimation('attack', {
+   *   onComplete: () => sprite.clearOverride()
+   * });
+   * ```
+   */
+  playAnimation(name: string, options?: { onComplete?: () => void; onFrame?: (frame: number) => void }): void;
 
   /**
    * Play a special animation, overriding velocity-driven animation.
@@ -352,6 +445,12 @@ export interface Sprite {
 
   /** Clear animation override, return to velocity-driven animation */
   clearOverride(): void;
+
+  /** Register a pointer event listener. Requires interactive = true. */
+  on(event: 'pointerdown' | 'pointerover' | 'pointerout', callback: (e: SpritePointerEvent) => void): void;
+
+  /** Remove a pointer event listener (specific callback, or all for that event). */
+  off(event: 'pointerdown' | 'pointerover' | 'pointerout', callback?: (e: SpritePointerEvent) => void): void;
 
   /**
    * Destroy this sprite (removes from game).
@@ -504,6 +603,15 @@ export interface Glyft {
 
   /** Load texture atlas */
   loadAtlas(imagePath: string, dataPath: string | object): Promise<Atlas>;
+  /**
+   * Load a single image as a texture atlas.
+   * Optionally split into frames using frameWidth/frameHeight.
+   *
+   * @param key - Unique name for this texture
+   * @param url - URL to the image file
+   * @param options - Frame dimensions for spritesheets
+   */
+  loadTexture(key: string, url: string, options?: { frameWidth?: number; frameHeight?: number }): Promise<Atlas>;
   /** Create procedural test atlas for development */
   createTestAtlas(name: string, tilesX: number, tilesY: number): Atlas;
   /** Create tilemap */
@@ -516,10 +624,24 @@ export interface Glyft {
   getTagged(tag: string): Sprite[];
   /** Get sprite by ID */
   getById(id: string): Sprite | undefined;
+  /**
+   * Get all interactive sprites at a world coordinate.
+   * Returns sprites sorted by Y (front-most first).
+   */
+  getSpritesAtPoint(worldX: number, worldY: number): Sprite[];
   /** Check AABB collision with tilemap */
   collidesWithMap(x: number, y: number, w: number, h: number): boolean;
   /** Check if sprite collides with tilemap at given position (uses sprite's frame size) */
   spriteCollidesWithMap(sprite: Sprite, x?: number, y?: number): boolean;
+  /**
+   * Tween a target's properties over time.
+   *
+   * @param target - Object to tween (sprite, camera, any object with numeric props)
+   * @param props - Target property values
+   * @param duration - Duration in milliseconds
+   * @param options - Easing, callbacks, delay
+   */
+  tween(target: object, props: { x?: number; y?: number; alpha?: number; scale?: number; rotation?: number }, duration: number, options?: { ease?: string; onUpdate?: (t: object) => void; onComplete?: (t: object) => void; delay?: number }): { cancel(): void; readonly active: boolean };
   /** Register update callback */
   onUpdate(callback: (dt: number) => void): void;
   /** Start game loop */
@@ -530,6 +652,12 @@ export interface Glyft {
   resume(): void;
   /** Reload config (hot reload) */
   reloadConfig(config: Partial<GlyftConfig>): void;
+
+  /** Register a game-level pointer event listener. */
+  on(event: 'pointerdown', callback: (e: SpritePointerEvent) => void): void;
+
+  /** Remove a game-level pointer event listener. */
+  off(event: 'pointerdown', callback?: (e: SpritePointerEvent) => void): void;
 
   /** Sound system */
   readonly sounds: {

@@ -31,6 +31,14 @@ export { GlyftEngine as Glyft } from './glyft';
 // Error class for catching Glyft-specific errors
 export { GlyftError } from './renderer';
 
+// Tween system
+export { TweenManager } from './tween';
+export type { TweenProps, TweenOptions, TweenHandle, EaseName } from './tween';
+
+// Tiled map loader
+export { loadTiledMap, applyTiledCollision } from './loaders/tiled';
+export type { TiledMap, TiledLayer, TiledTileset, TiledObject, TiledLoadOptions, TiledLoadResult } from './loaders/tiled';
+
 // Types
 export type {
   GlyftConfig,
@@ -40,6 +48,7 @@ export type {
   SoundRule,
   MusicTrack,
   CollisionAction,
+  AnimationDef,
   Handler,
   NetworkConfig,
   Sprite,
@@ -53,6 +62,7 @@ export type {
   NetworkAdapter,
   Direction,
   Direction8,
+  SpritePointerEvent,
 } from './types';
 
 // Re-export from network for convenience

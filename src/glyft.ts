@@ -13,6 +13,8 @@ import type {
   SoundRule,
   MusicTrack,
   CollisionAction,
+  AnimationDef,
+  SpritePointerEvent,
 } from './types';
 
 import {
@@ -34,6 +36,7 @@ import { createCollisionSystem, applyCollisionAction, type CollisionSystem, type
 import { createMusicManager, type MusicManager } from './music';
 import { CameraImpl } from './camera';
 import { InputImpl } from './input';
+import { TweenManager, type TweenProps, type TweenOptions } from './tween';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -56,13 +59,19 @@ interface InternalSprite {
   data: Record<string, unknown>;
   hp?: number;
   sounds: boolean;
+  interactive: boolean;
+  hitbox: { x: number; y: number; w: number; h: number } | null;
   atlas: InternalAtlas;
   exists: boolean;
+  // Named animation registry
+  animations: Map<string, AnimationDef>;
   // Animation state
   animOverride: string | null;
   animStartTime: number;
   animLoop: boolean;
   animOnComplete: (() => void) | null;
+  animOnFrame: ((frame: number) => void) | null;
+  animCurrentFrame: number;
   lastDirection: number;
   // Animation config
   idleFrames: number;
@@ -73,6 +82,8 @@ interface InternalSprite {
   frameY: number;
   frameW: number;
   frameH: number;
+  // Pointer event listeners (lazily allocated)
+  _listeners: Record<string, ((e: SpritePointerEvent) => void)[]> | null;
 }
 
 interface InternalAtlas {
@@ -130,11 +141,20 @@ export class GlyftEngine {
   private _soundManager: SoundManager;
   private _musicManager: MusicManager;
   private _collisionSystem: CollisionSystem | null = null;
+  private _tweenManager: TweenManager = new TweenManager();
+
+  // Depth sorting
+  private _depthSortCounter = 0;
+  private _sortedSpriteCache: InternalSprite[] = [];
 
   // Reactive rules
   private _soundRules: Map<string, SoundRule | string> = new Map();
   private _collisionRules: Map<string, CollisionAction | string> = new Map();
   private _collisionCallbacks: Map<string, ((a: Sprite, b: Sprite) => void)[]> = new Map();
+
+  // Pointer events
+  private _hoveredSprite: InternalSprite | null = null;
+  private _gameListeners: Record<string, ((e: SpritePointerEvent) => void)[]> = {};
 
   // Sound timing (for intervals and cooldowns)
   private _soundLastPlayed: Map<string, number> = new Map(); // pattern -> last time
@@ -175,6 +195,40 @@ export class GlyftEngine {
     this._input = new InputImpl(canvas);
     this._soundManager = createSoundManager(config.settings.viewport[0]);
     this._musicManager = createMusicManager();
+
+    // Pointer event dispatch (click → sprite callbacks + game-level event)
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return; // Primary button only
+      const pointer = this._input.pointer;
+      const worldX = pointer.x + this._camera.x;
+      const worldY = pointer.y + this._camera.y;
+
+      const hit = this._getTopSpriteAtPoint(worldX, worldY);
+      if (hit) {
+        this._fireSpriteEvent(hit, 'pointerdown', worldX, worldY);
+      }
+
+      // Fire game-level pointerdown
+      const listeners = this._gameListeners['pointerdown'];
+      if (listeners) {
+        const ge: SpritePointerEvent = {
+          sprite: hit ? this._createSpriteProxy(hit) : null,
+          worldX,
+          worldY,
+        };
+        for (const cb of listeners) cb(ge);
+      }
+    });
+
+    // Clear hover state when pointer leaves canvas
+    canvas.addEventListener('pointerleave', () => {
+      if (this._hoveredSprite && this._hoveredSprite.exists) {
+        const pointer = this._input.pointer;
+        this._fireSpriteEvent(this._hoveredSprite, 'pointerout',
+          pointer.x + this._camera.x, pointer.y + this._camera.y);
+      }
+      this._hoveredSprite = null;
+    });
 
     // Initialize stats from config
     if (config.stats) {
@@ -539,6 +593,72 @@ export class GlyftEngine {
     return this._createAtlasProxy(atlas);
   }
 
+  /**
+   * Load a single image as a texture atlas.
+   * If frameWidth/frameHeight are provided, the image is split into a grid of frames.
+   * Otherwise, the entire image is a single frame named after the key.
+   *
+   * @param key - Unique name for this texture
+   * @param url - URL to the image file
+   * @param options - Frame dimensions for spritesheets
+   * @returns Promise resolving to the loaded Atlas
+   *
+   * @example
+   * ```typescript
+   * // Load a single image (1 frame)
+   * const npcAtlas = await game.loadTexture('blacksmith', '/assets/npcs/blacksmith.png');
+   *
+   * // Load a spritesheet (multiple frames in a grid)
+   * const heroAtlas = await game.loadTexture('hero', '/assets/hero.png', {
+   *   frameWidth: 96,
+   *   frameHeight: 96,
+   * });
+   * ```
+   */
+  async loadTexture(key: string, url: string, options?: { frameWidth?: number; frameHeight?: number }): Promise<Atlas> {
+    const texture = await loadTexture(this.gl, url);
+
+    // Get image dimensions
+    const image = new Image();
+    image.src = url;
+    await new Promise(r => (image.onload = r));
+
+    const atlas: InternalAtlas = {
+      name: key,
+      texture,
+      width: image.width,
+      height: image.height,
+      frames: new Map(),
+      tags: new Map(),
+    };
+
+    const fw = options?.frameWidth ?? image.width;
+    const fh = options?.frameHeight ?? image.height;
+    const cols = Math.floor(image.width / fw);
+    const rows = Math.floor(image.height / fh);
+
+    if (cols === 1 && rows === 1) {
+      // Single frame - use the key as the frame name
+      atlas.frames.set(key, { x: 0, y: 0, w: fw, h: fh });
+    } else {
+      // Grid of frames - name as key_row_col and key (default = first frame)
+      atlas.frames.set(key, { x: 0, y: 0, w: fw, h: fh });
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          atlas.frames.set(`${key}_${row}_${col}`, {
+            x: col * fw,
+            y: row * fh,
+            w: fw,
+            h: fh,
+          });
+        }
+      }
+    }
+
+    this._atlases.set(key, atlas);
+    return this._createAtlasProxy(atlas);
+  }
+
   private _createAtlasProxy(atlas: InternalAtlas): Atlas {
     return {
       get name() { return atlas.name; },
@@ -795,12 +915,17 @@ export class GlyftEngine {
       tags: this._getAutoTags(type),
       data: {},
       sounds: true,
+      interactive: false,
+      hitbox: null,
       atlas: internalAtlas,
       exists: true,
+      animations: new Map(),
       animOverride: null,
       animStartTime: 0,
       animLoop: true,
       animOnComplete: null,
+      animOnFrame: null,
+      animCurrentFrame: -1,
       lastDirection: 0,
       // Animation config (default: 1 idle frame, 4 walk frames, 8 fps)
       idleFrames: 1,
@@ -810,6 +935,7 @@ export class GlyftEngine {
       frameY: resolvedFrame.y,
       frameW: resolvedFrame.w,
       frameH: resolvedFrame.h,
+      _listeners: null,
     };
 
     // Initialize HP if stats defined
@@ -877,11 +1003,35 @@ export class GlyftEngine {
       set hp(v: number | undefined) { sprite.hp = v; },
       get sounds() { return sprite.sounds; },
       set sounds(v: boolean) { sprite.sounds = v; },
+      get interactive() { return sprite.interactive; },
+      set interactive(v: boolean) { sprite.interactive = v; },
+      get hitbox() { return sprite.hitbox; },
+      set hitbox(v: { x: number; y: number; w: number; h: number } | null) { sprite.hitbox = v; },
       get atlas() { return self._createAtlasProxy(sprite.atlas); },
       get exists() { return sprite.exists; },
+      get width() { return sprite.frameW; },
+      get height() { return sprite.frameH; },
       get facing() {
         const dirs = ['down', 'right', 'up', 'left'] as const;
         return dirs[sprite.lastDirection] ?? 'down';
+      },
+
+      defineAnimation(name: string, def: AnimationDef) {
+        sprite.animations.set(name, def);
+      },
+
+      playAnimation(name: string, options?: { onComplete?: () => void; onFrame?: (frame: number) => void }) {
+        const anim = sprite.animations.get(name);
+        if (!anim) {
+          console.warn(`[Glyft] Animation '${name}' not defined on sprite '${sprite.id}'`);
+          return;
+        }
+        sprite.animOverride = name;
+        sprite.animStartTime = self._time;
+        sprite.animLoop = anim.loop ?? false;
+        sprite.animOnComplete = options?.onComplete ?? null;
+        sprite.animOnFrame = options?.onFrame ?? null;
+        sprite.animCurrentFrame = -1;
       },
 
       playOverride(animation: string, options?: { loop?: boolean; onComplete?: () => void }) {
@@ -889,14 +1039,39 @@ export class GlyftEngine {
         sprite.animStartTime = self._time;
         sprite.animLoop = options?.loop ?? false;
         sprite.animOnComplete = options?.onComplete ?? null;
+        sprite.animOnFrame = null;
+        sprite.animCurrentFrame = -1;
       },
 
       clearOverride() {
         sprite.animOverride = null;
         sprite.animOnComplete = null;
+        sprite.animOnFrame = null;
+        sprite.animCurrentFrame = -1;
+      },
+
+      on(event: 'pointerdown' | 'pointerover' | 'pointerout', cb: (e: SpritePointerEvent) => void) {
+        if (!sprite._listeners) sprite._listeners = {};
+        if (!sprite._listeners[event]) sprite._listeners[event] = [];
+        sprite._listeners[event].push(cb);
+      },
+
+      off(event: 'pointerdown' | 'pointerover' | 'pointerout', cb?: (e: SpritePointerEvent) => void) {
+        if (!sprite._listeners?.[event]) return;
+        if (cb) {
+          const arr = sprite._listeners[event];
+          const idx = arr.indexOf(cb);
+          if (idx >= 0) arr.splice(idx, 1);
+        } else {
+          delete sprite._listeners[event];
+        }
       },
 
       destroy() {
+        if (self._hoveredSprite === sprite) {
+          self._hoveredSprite = null;
+        }
+        sprite._listeners = null;
         sprite.exists = false;
         self._sprites.delete(sprite.id);
       },
@@ -974,6 +1149,102 @@ export class GlyftEngine {
       return this._createSpriteProxy(sprite);
     }
     return undefined;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hit Testing
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get all interactive sprites at a world coordinate.
+   * Returns sprites sorted by Y (front-most first, i.e., highest Y first).
+   *
+   * @param worldX - World X coordinate
+   * @param worldY - World Y coordinate
+   * @returns Array of sprites at that point
+   *
+   * @example
+   * ```typescript
+   * // Convert screen click to world coordinates
+   * const worldX = game.input.pointer.x + game.camera.x;
+   * const worldY = game.input.pointer.y + game.camera.y;
+   * const hits = game.getSpritesAtPoint(worldX, worldY);
+   * if (hits.length > 0) {
+   *   console.log('Clicked:', hits[0].type);
+   * }
+   * ```
+   */
+  getSpritesAtPoint(worldX: number, worldY: number): Sprite[] {
+    const hits: InternalSprite[] = [];
+
+    for (const sprite of this._sprites.values()) {
+      if (!sprite.exists || !sprite.interactive) continue;
+
+      let hx: number, hy: number, hw: number, hh: number;
+      if (sprite.hitbox) {
+        hx = sprite.x + sprite.hitbox.x;
+        hy = sprite.y + sprite.hitbox.y;
+        hw = sprite.hitbox.w;
+        hh = sprite.hitbox.h;
+      } else {
+        hx = sprite.x;
+        hy = sprite.y;
+        hw = sprite.frameW;
+        hh = sprite.frameH;
+      }
+
+      if (worldX >= hx && worldX < hx + hw && worldY >= hy && worldY < hy + hh) {
+        hits.push(sprite);
+      }
+    }
+
+    // Sort by Y descending (front-most first)
+    hits.sort((a, b) => b.y - a.y);
+
+    return hits.map(s => this._createSpriteProxy(s));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tweens
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Tween a target's properties smoothly over time.
+   *
+   * @param target - Object to tween (sprite, camera, any object with numeric props)
+   * @param props - Target values for properties
+   * @param duration - Duration in milliseconds
+   * @param options - Easing, callbacks, delay
+   * @returns Handle for cancellation
+   *
+   * @example
+   * ```typescript
+   * // Move sprite smoothly
+   * game.tween(sprite, { x: 200, y: 100 }, 500, { ease: 'easeOutQuad' });
+   *
+   * // Fade out and destroy
+   * game.tween(sprite, { alpha: 0 }, 300, {
+   *   onComplete: () => sprite.destroy()
+   * });
+   * ```
+   */
+  tween(
+    target: object,
+    props: { x?: number; y?: number; alpha?: number; scale?: number; rotation?: number },
+    duration: number,
+    options?: { ease?: string; onUpdate?: (t: object) => void; onComplete?: (t: object) => void; delay?: number },
+  ): { cancel(): void; readonly active: boolean } {
+    return this._tweenManager.add(
+      target as Record<string, unknown>,
+      props as TweenProps,
+      duration,
+      options as TweenOptions,
+    );
+  }
+
+  /** Cancel all tweens on a target */
+  cancelTweens(target: object): void {
+    this._tweenManager.cancelAll(target as Record<string, unknown>);
   }
 
   // ---------------------------------------------------------------------------
@@ -1125,6 +1396,25 @@ export class GlyftEngine {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Game-Level Pointer Events
+  // ---------------------------------------------------------------------------
+
+  on(event: 'pointerdown', cb: (e: SpritePointerEvent) => void): void {
+    if (!this._gameListeners[event]) this._gameListeners[event] = [];
+    this._gameListeners[event].push(cb);
+  }
+
+  off(event: 'pointerdown', cb?: (e: SpritePointerEvent) => void): void {
+    if (!this._gameListeners[event]) return;
+    if (cb) {
+      const idx = this._gameListeners[event].indexOf(cb);
+      if (idx >= 0) this._gameListeners[event].splice(idx, 1);
+    } else {
+      delete this._gameListeners[event];
+    }
+  }
+
   private _loop = (): void => {
     if (!this._running) return;
 
@@ -1135,6 +1425,15 @@ export class GlyftEngine {
 
     // Update input
     this._input.update();
+
+    // Update tweens
+    this._tweenManager.update(this._dt * 1000);
+
+    // Advance named animations (CPU-driven override frame advancement)
+    this._updateAnimations();
+
+    // Update pointer hover tracking (fires pointerover/pointerout)
+    this._updatePointerEvents();
 
     // Run user update callbacks
     for (const callback of this._updateCallbacks) {
@@ -1153,6 +1452,103 @@ export class GlyftEngine {
     // Next frame
     requestAnimationFrame(this._loop);
   };
+
+  // ---------------------------------------------------------------------------
+  // Pointer Event System
+  // ---------------------------------------------------------------------------
+
+  /** Find the topmost interactive sprite at a world point (no proxy allocation). */
+  private _getTopSpriteAtPoint(worldX: number, worldY: number): InternalSprite | null {
+    let top: InternalSprite | null = null;
+    let topY = -Infinity;
+    for (const sprite of this._sprites.values()) {
+      if (!sprite.exists || !sprite.interactive) continue;
+      const hx = sprite.hitbox ? sprite.x + sprite.hitbox.x : sprite.x;
+      const hy = sprite.hitbox ? sprite.y + sprite.hitbox.y : sprite.y;
+      const hw = sprite.hitbox ? sprite.hitbox.w : sprite.frameW;
+      const hh = sprite.hitbox ? sprite.hitbox.h : sprite.frameH;
+      if (worldX >= hx && worldX < hx + hw && worldY >= hy && worldY < hy + hh) {
+        if (sprite.y > topY) { topY = sprite.y; top = sprite; }
+      }
+    }
+    return top;
+  }
+
+  /** Dispatch a pointer event to a sprite's listeners. */
+  private _fireSpriteEvent(sprite: InternalSprite, event: string, worldX: number, worldY: number): void {
+    if (!sprite._listeners?.[event]) return;
+    const e: SpritePointerEvent = { sprite: this._createSpriteProxy(sprite), worldX, worldY };
+    for (const cb of sprite._listeners[event]) {
+      cb(e);
+    }
+  }
+
+  /** Per-frame hover tracking — fires pointerover/pointerout on interactive sprites. */
+  private _updatePointerEvents(): void {
+    const pointer = this._input.pointer;
+    const worldX = pointer.x + this._camera.x;
+    const worldY = pointer.y + this._camera.y;
+
+    const hit = this._getTopSpriteAtPoint(worldX, worldY);
+
+    // Hover exit
+    if (this._hoveredSprite && this._hoveredSprite !== hit) {
+      if (this._hoveredSprite.exists) {
+        this._fireSpriteEvent(this._hoveredSprite, 'pointerout', worldX, worldY);
+      }
+      this._hoveredSprite = null;
+    }
+
+    // Hover enter
+    if (hit && hit !== this._hoveredSprite) {
+      this._hoveredSprite = hit;
+      this._fireSpriteEvent(hit, 'pointerover', worldX, worldY);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Named Animation Advancement (CPU-driven for overrides)
+  // ---------------------------------------------------------------------------
+
+  private _updateAnimations(): void {
+    for (const sprite of this._sprites.values()) {
+      if (!sprite.exists || !sprite.animOverride) continue;
+
+      const anim = sprite.animations.get(sprite.animOverride);
+      if (!anim) continue;
+
+      const elapsed = this._time - sprite.animStartTime;
+      const frameDuration = 1 / anim.fps;
+      const totalFrames = anim.frames.length;
+      const rawFrame = Math.floor(elapsed / frameDuration);
+
+      let frameIndex: number;
+      if (sprite.animLoop || anim.loop) {
+        frameIndex = rawFrame % totalFrames;
+      } else {
+        frameIndex = Math.min(rawFrame, totalFrames - 1);
+
+        // Check if animation completed
+        if (rawFrame >= totalFrames) {
+          const onComplete = sprite.animOnComplete;
+          sprite.animOverride = null;
+          sprite.animOnComplete = null;
+          sprite.animOnFrame = null;
+          sprite.animCurrentFrame = -1;
+          if (onComplete) onComplete();
+          continue;
+        }
+      }
+
+      // Fire onFrame callback if frame changed
+      if (frameIndex !== sprite.animCurrentFrame) {
+        sprite.animCurrentFrame = frameIndex;
+        if (sprite.animOnFrame) {
+          sprite.animOnFrame(frameIndex);
+        }
+      }
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Collision Detection
@@ -1468,11 +1864,28 @@ export class GlyftEngine {
     if (this._sprites.size === 0) return;
 
     const gl = this.gl;
+    const depthSort = this.config.settings.depthSort ?? 'none';
+    const depthSortInterval = this.config.settings.depthSortInterval ?? 5;
 
-    // Group sprites by atlas
-    const spritesByAtlas = new Map<InternalAtlas, InternalSprite[]>();
+    // Collect live sprites
+    this._sortedSpriteCache.length = 0;
     for (const sprite of this._sprites.values()) {
       if (!sprite.exists) continue;
+      this._sortedSpriteCache.push(sprite);
+    }
+
+    // Y-depth sort (throttled)
+    if (depthSort === 'y') {
+      this._depthSortCounter++;
+      if (this._depthSortCounter >= depthSortInterval) {
+        this._depthSortCounter = 0;
+        this._sortedSpriteCache.sort((a, b) => (a.y + a.frameH) - (b.y + b.frameH));
+      }
+    }
+
+    // Group sprites by atlas (preserving sort order)
+    const spritesByAtlas = new Map<InternalAtlas, InternalSprite[]>();
+    for (const sprite of this._sortedSpriteCache) {
       const list = spritesByAtlas.get(sprite.atlas) ?? [];
       list.push(sprite);
       spritesByAtlas.set(sprite.atlas, list);
@@ -1507,6 +1920,10 @@ export class GlyftEngine {
     }
   }
 
+  // Reusable buffer for tint packing (avoids per-frame allocation)
+  private _tintU32 = new Uint32Array(1);
+  private _tintF32 = new Float32Array(this._tintU32.buffer);
+
   private _renderSpriteGroup(atlas: InternalAtlas, sprites: InternalSprite[]): void {
     const gl = this.gl;
 
@@ -1519,47 +1936,72 @@ export class GlyftEngine {
       const sprite = sprites[i];
       const offset = i * FLOATS_PER_INSTANCE;
 
+      // Check for named animation override — CPU drives the frame
+      const namedAnim = sprite.animOverride ? sprite.animations.get(sprite.animOverride) : null;
+
       // a_posVel: x, y, vx, vy
       instanceData[offset + 0] = sprite.x;
       instanceData[offset + 1] = sprite.y;
       instanceData[offset + 2] = sprite.vx;
       instanceData[offset + 3] = sprite.vy;
 
-      // a_frame: u, v, w, h (in atlas pixels)
-      instanceData[offset + 4] = sprite.frameX;
-      instanceData[offset + 5] = sprite.frameY;
-      instanceData[offset + 6] = sprite.frameW;
-      instanceData[offset + 7] = sprite.frameH;
+      if (namedAnim) {
+        // Named animation: CPU computes exact frame position
+        const frameIdx = sprite.animCurrentFrame >= 0 ? sprite.animCurrentFrame : 0;
+        const col = namedAnim.frames[frameIdx] ?? 0;
+        const row = namedAnim.row ?? sprite.lastDirection;
+
+        // a_frame: exact pixel position of this frame
+        instanceData[offset + 4] = sprite.frameX + col * sprite.frameW;
+        instanceData[offset + 5] = sprite.frameY + row * sprite.frameH;
+        instanceData[offset + 6] = sprite.frameW;
+        instanceData[offset + 7] = sprite.frameH;
+
+        // Mark as override with 0 walk frames so shader shows exactly this frame
+        instanceData[offset + 12] = 1; // idleFrames = 1 (show this single frame)
+        instanceData[offset + 13] = 0; // walkFrames = 0
+        instanceData[offset + 14] = 0; // fps = 0 (static)
+        // hasOverride = 1 so shader uses idle frame at computed position
+        const flipXFlag = sprite.flipX ? 2 : 0;
+        const flipYFlag = sprite.flipY ? 4 : 0;
+        const lastDirBits = (0 & 0xF) << 8; // row 0 — already baked into frame position
+        instanceData[offset + 15] = 1 | flipXFlag | flipYFlag | lastDirBits;
+      } else {
+        // Velocity-driven GPU animation (standard path)
+        instanceData[offset + 4] = sprite.frameX;
+        instanceData[offset + 5] = sprite.frameY;
+        instanceData[offset + 6] = sprite.frameW;
+        instanceData[offset + 7] = sprite.frameH;
+
+        // Update lastDirection based on current velocity (for idle facing)
+        if (Math.abs(sprite.vx) > 0.5 || Math.abs(sprite.vy) > 0.5) {
+          if (Math.abs(sprite.vx) > Math.abs(sprite.vy)) {
+            sprite.lastDirection = sprite.vx > 0 ? 1 : 3; // Right or Left
+          } else {
+            sprite.lastDirection = sprite.vy > 0 ? 0 : 2; // Down or Up
+          }
+        }
+
+        // a_anim: idleFrames, walkFrames, fps, flags
+        const hasOverride = sprite.animOverride !== null ? 1 : 0;
+        const flipXFlag = sprite.flipX ? 2 : 0;
+        const flipYFlag = sprite.flipY ? 4 : 0;
+        const lastDirBits = (sprite.lastDirection & 0xF) << 8;
+        instanceData[offset + 15] = hasOverride | flipXFlag | flipYFlag | lastDirBits;
+
+        instanceData[offset + 12] = sprite.idleFrames;
+        instanceData[offset + 13] = sprite.walkFrames;
+        instanceData[offset + 14] = sprite.fps;
+      }
 
       // a_props: rotation, scale, alpha, tint (packed)
       instanceData[offset + 8] = sprite.rotation;
       instanceData[offset + 9] = sprite.scale;
       instanceData[offset + 10] = sprite.alpha;
 
-      // Pack tint as uint32 bits into float
-      const tintBits = sprite.tint | 0xFF000000; // Add alpha
-      instanceData[offset + 11] = new Float32Array(new Uint32Array([tintBits]).buffer)[0];
-
-      // Update lastDirection based on current velocity (for idle facing)
-      if (Math.abs(sprite.vx) > 0.5 || Math.abs(sprite.vy) > 0.5) {
-        if (Math.abs(sprite.vx) > Math.abs(sprite.vy)) {
-          sprite.lastDirection = sprite.vx > 0 ? 1 : 3; // Right or Left
-        } else {
-          sprite.lastDirection = sprite.vy > 0 ? 0 : 2; // Down or Up
-        }
-      }
-
-      // a_anim: idleFrames, walkFrames, fps, flags
-      const hasOverride = sprite.animOverride !== null ? 1 : 0;
-      const flipXFlag = sprite.flipX ? 2 : 0;
-      const flipYFlag = sprite.flipY ? 4 : 0;
-      const lastDirBits = (sprite.lastDirection & 0xF) << 8;
-      const flags = hasOverride | flipXFlag | flipYFlag | lastDirBits;
-
-      instanceData[offset + 12] = sprite.idleFrames;
-      instanceData[offset + 13] = sprite.walkFrames;
-      instanceData[offset + 14] = sprite.fps;
-      instanceData[offset + 15] = flags;
+      // Pack tint as uint32 bits into float (reuse buffer to avoid allocation)
+      this._tintU32[0] = sprite.tint | 0xFF000000;
+      instanceData[offset + 11] = this._tintF32[0];
     }
 
     // Bind VAO and update instance buffer
