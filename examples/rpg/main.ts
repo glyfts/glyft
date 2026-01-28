@@ -13,7 +13,7 @@
 
 import { Glyft, type GlyftConfig, type Sprite, type TileMap } from '../../src';
 import { clamp, distance } from '../../src/helpers';
-import { projectiles, ai, death, rooms, dialogue } from '../../addons';
+import { projectiles, ai, death, rooms, dialogue, hud } from '../../addons';
 import type { ProjectileAddon } from '../../addons/projectiles';
 import type { DialogueAddon } from '../../addons/dialogue';
 import type { RoomAddon } from '../../addons/rooms';
@@ -147,12 +147,6 @@ const config: GlyftConfig = {
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const game = new Glyft(canvas, config);
 const atlas = game.createTestAtlas('test', 16, 16);
-
-// UI elements
-const statsEl = document.getElementById('stats')!;
-const dialogueEl = document.getElementById('dialogue')!;
-const speakerEl = document.getElementById('speaker')!;
-const textEl = document.getElementById('dialogueText')!;
 
 // =============================================================================
 // Terrain Generation (room build callbacks)
@@ -445,18 +439,35 @@ game.use(dialogue({
   },
   advanceKey: 'Space',
   proximityRange: 24,
-  onStart: (_id, speaker) => {
-    speakerEl.textContent = speaker ?? '';
-    dialogueEl.classList.add('visible');
-  },
-  onLine: (_id, _index, text, speaker) => {
-    speakerEl.textContent = speaker ?? '';
-    textEl.textContent = text;
+  onLine: () => {
     game.sounds.play('npc_talk', { volume: 0.3 });
   },
-  onEnd: () => {
-    dialogueEl.classList.remove('visible');
-  },
+}));
+
+game.use(hud({
+  panels: [
+    {
+      position: 'top-left',
+      level: {
+        stat: 'xp',
+        thresholds: [0, 50, 120, 200, 300, 500, 800],
+        barColor: 0x44aaff,
+        barWidth: 50,
+      },
+      stats: [
+        { stat: 'hp', label: '\u2665', color: 0xff4444, max: 100 },
+      ],
+    },
+    {
+      position: 'top-right',
+      stats: [
+        { stat: 'coins', label: '\u25cf', color: 0xffdd44 },
+        { stat: 'keys', label: '\u25c6', color: 0x44ddff },
+      ],
+    },
+  ],
+  announcement: { hold: 2.0 },
+  dialogue: {},
 }));
 
 // =============================================================================
@@ -488,7 +499,6 @@ const PLAYER_SPEED = 100;
 game.onUpdate((dt) => {
   const dlg = game.addon<DialogueAddon>('dialogue')!;
   const proj = game.addon<ProjectileAddon>('projectiles')!;
-  const roomSys = game.addon<RoomAddon>('rooms')!;
 
   // Freeze during dialogue
   if (dlg.active) {
@@ -524,17 +534,6 @@ game.onUpdate((dt) => {
   // Update player HP bar
   const hp = player.hp ?? 100;
   player.hpBarValue = hp / 100;
-
-  // Update stats display
-  const roomName = roomSys.currentDef?.name ?? roomSys.currentRoom ?? '';
-  statsEl.innerHTML = `
-    HP: ${hp}<br>
-    Coins: ${game.stats.coins}<br>
-    Keys: ${game.stats.keys}<br>
-    XP: ${game.stats.xp}<br>
-    <br>
-    Room: ${roomName}
-  `;
 });
 
 // =============================================================================

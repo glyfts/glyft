@@ -38,47 +38,6 @@
       margin-top: 1rem;
       font-size: 0.875rem;
     }
-    .stats {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      color: white;
-      font-family: monospace;
-      font-size: 14px;
-      text-align: left;
-      line-height: 1.5;
-      background: rgba(0, 0, 0, 0.5);
-      padding: 10px;
-      border-radius: 4px;
-    }
-    .dialogue {
-      position: fixed;
-      bottom: 100px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.9);
-      color: white;
-      padding: 20px;
-      border-radius: 8px;
-      border: 2px solid #666;
-      max-width: 400px;
-      font-family: monospace;
-      font-size: 14px;
-      display: none;
-    }
-    .dialogue.visible {
-      display: block;
-    }
-    .dialogue .speaker {
-      color: #4a9;
-      font-weight: bold;
-      margin-bottom: 8px;
-    }
-    .dialogue .prompt {
-      color: #888;
-      margin-top: 12px;
-      font-size: 12px;
-    }
   </style>
 </head>
 <body>
@@ -86,12 +45,6 @@
     <h1>Glyft RPG Example</h1>
     <canvas id="game" width="320" height="240"></canvas>
     <p class="info">WASD/Arrows: Move | Space: Interact | M: Music | 1-3: Change Room</p>
-  </div>
-  <div class="stats" id="stats"></div>
-  <div class="dialogue" id="dialogue">
-    <div class="speaker" id="speaker"></div>
-    <div class="text" id="dialogueText"></div>
-    <div class="prompt">Press SPACE to continue</div>
   </div>
   <script type="module" src="./main.ts"></script>
 </body>
