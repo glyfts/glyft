@@ -29,3 +29,6 @@ export type { RoomAddon, RoomConfig, RoomDef, SpawnDef, ExitDef } from './rooms'
 
 export { dialogue } from './dialogue';
 export type { DialogueAddon, DialogueAddonConfig, DialogueDef } from './dialogue';
+
+export { hud } from './hud';
+export type { HudAddon, HudConfig, HudStat, HudLevel, HudPanel, HudPosition, HudAnnouncement, HudDialogue } from './hud';

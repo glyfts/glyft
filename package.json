@@ -46,6 +46,10 @@
     "./addons/dialogue": {
       "types": "./dist/addons/dialogue.d.ts",
       "import": "./dist/addons/dialogue.js"
+    },
+    "./addons/hud": {
+      "types": "./dist/addons/hud.d.ts",
+      "import": "./dist/addons/hud.js"
     }
   },
   "files": [
