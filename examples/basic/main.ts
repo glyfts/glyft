@@ -32,11 +32,6 @@ const config: GlyftConfig = {
     // Player takes damage from enemies
     '[player]:[enemy]': { damage: 10, knockback: 100, flash: 0.2, cooldown: 0.5 },
   },
-  music: {
-    // Procedural test music (no audio files needed)
-    'overworld': { track: '$peaceful', loop: true, volume: 1 },
-    'danger': { track: '$battle', loop: true, volume: 1 },
-  },
 };
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -158,49 +153,6 @@ game.onUpdate((dt) => {
   }
 });
 
-// Add HP display
-const hpDisplay = document.createElement('div');
-hpDisplay.style.cssText = 'position:fixed;top:10px;left:10px;color:white;font-family:monospace;font-size:14px;';
-document.body.appendChild(hpDisplay);
-
-game.onUpdate(() => {
-  hpDisplay.textContent = `HP: ${player.hp ?? 100}`;
-});
-
-// Start background music
-game.music.play('overworld', { fade: 1 });
-
-// Switch to danger music when HP is low
-let wasLowHP = false;
-
-game.onUpdate(() => {
-  const hp = player.hp ?? 100;
-  const isLowHP = hp < 50;
-
-  if (isLowHP && !wasLowHP) {
-    game.music.play('danger', { fade: 0.5 });
-  } else if (!isLowHP && wasLowHP) {
-    game.music.play('overworld', { fade: 0.5 });
-  }
-  wasLowHP = isLowHP;
-});
-
 game.start();
 
-// Music toggle
-let musicEnabled = true;
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyM') {
-    musicEnabled = !musicEnabled;
-    if (musicEnabled) {
-      game.music.play(wasLowHP ? 'danger' : 'overworld', { fade: 0.3 });
-    } else {
-      game.music.stop({ fade: 0.3 });
-    }
-    console.log(`Music: ${musicEnabled ? 'ON' : 'OFF'}`);
-  }
-});
-
 console.log('Glyft running! Use arrow keys or WASD to move.');
-console.log('Sound: footsteps, hurt sounds | Music: changes when HP < 50');
-console.log('Press M to toggle music on/off');
