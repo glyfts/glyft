@@ -13,10 +13,10 @@
 
 import { Glyft, type GlyftConfig, type Sprite, type TileMap } from '../../src';
 import { clamp, distance } from '../../src/helpers';
-import { projectiles, ai, death, rooms, dialogue } from '../../src/addons';
-import type { ProjectileAddon } from '../../src/addons/projectiles';
-import type { DialogueAddon } from '../../src/addons/dialogue';
-import type { RoomAddon } from '../../src/addons/rooms';
+import { projectiles, ai, death, rooms, dialogue } from '../../addons';
+import type { ProjectileAddon } from '../../addons/projectiles';
+import type { DialogueAddon } from '../../addons/dialogue';
+import type { RoomAddon } from '../../addons/rooms';
 
 // =============================================================================
 // Glyft Engine Config
@@ -97,19 +97,44 @@ const config: GlyftConfig = {
   },
 
   music: {
+    // Village — gentle C major, lilting rhythm (16 beats @ 58 bpm ≈ 16.5s loop)
     peaceful: {
-      bpm: 56, wave: 'sine', volume: 0.8,
-      notes: ['C4', 'E4', 'G4', 'C5', 'B4', 'G4', 'E4', 'G4', 'A4', 'F4', 'D4', 'F4', 'G4', 'E4', 'C4', 'E4'],
+      bpm: 58, wave: 'sine', volume: 0.8,
+      notes: [
+        // Phrase 1: rising arpeggio, hopeful
+        ['C4', 1.5], ['E4', 0.5], ['G4', 1], ['A4', 1],
+        ['G4', 1.5], ['E4', 0.5], ['D4', 1], ['E4', 1],
+        // Phrase 2: stepwise descent, resolves home
+        'F4', ['E4', 0.5], ['D4', 0.5], 'C4', 'E4',
+        'D4', ['C4', 0.5], ['B3', 0.5], ['C4', 2],
+      ],
       pad: { wave: 'sine', freq: 131, volume: 0.3 },
     },
+    // Dark Forest — D minor, slow and ominous (16 beats @ 50 bpm ≈ 19s loop)
     dungeon: {
-      bpm: 48, wave: 'triangle', volume: 0.8,
-      notes: ['D3', 'F3', 'A3', 'D4', 'C4', 'A3', 'E3', 'G3', 'Bb3', 'A3', 'F3', 'D3'],
+      bpm: 50, wave: 'triangle', volume: 0.8,
+      notes: [
+        // Phrase 1: long root drone, then chromatic neighbor
+        ['D3', 3], 'F3',
+        'A3', ['Bb3', 0.5], ['A3', 0.5], 'G3', 'F3',
+        // Phrase 2: half-step tension, bass walk to root
+        ['E3', 1.5], ['F3', 0.5], ['D3', 2],
+        'A2', ['Bb2', 0.5], ['C3', 0.5], ['D3', 2],
+      ],
       pad: { wave: 'triangle', freq: 73, volume: 0.4 },
     },
+    // Ancient Dungeon — D minor, driving battle rhythm (16 beats @ 120 bpm ≈ 8s loop)
     battle: {
-      bpm: 100, wave: 'square', volume: 0.7,
-      notes: ['D4', 'D4', 'F4', 'A4', 'G4', 'F4', 'E4', 'D4', 'C4', 'D4', 'F4', 'G4', 'A4', 'A4', 'G4', 'F4'],
+      bpm: 120, wave: 'square', volume: 0.7,
+      notes: [
+        // Phrase 1: staccato attack, rapid descent
+        ['D4', 0.5], ['D4', 0.5], 'F4', ['A4', 0.5], ['A4', 0.5],
+        ['G4', 0.5], ['F4', 0.5], ['E4', 0.5], ['D4', 0.5], 'A3',
+        'D4', ['F4', 0.5], ['E4', 0.5],
+        // Phrase 2: call and response, held resolution
+        ['D4', 0.5], ['D4', 0.5], 'F4', 'A4', 'G4',
+        ['F4', 0.5], ['E4', 0.5], ['D4', 0.5], ['C4', 0.5], ['D4', 2],
+      ],
       pad: { wave: 'sawtooth', freq: 73, volume: 0.2 },
     },
   },

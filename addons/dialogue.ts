@@ -32,8 +32,7 @@
  * @packageDocumentation
  */
 
-import type { GlyftAddon } from '../addon';
-import type { Glyft, Sprite } from '../types';
+import type { GlyftAddon, Glyft, Sprite } from '../src/types';
 
 /** Dialogue definition */
 export interface DialogueDef {

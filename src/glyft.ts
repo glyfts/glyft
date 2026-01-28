@@ -190,7 +190,7 @@ export class GlyftEngine {
   private _soundLastPlayed: Map<string, number> = new Map(); // pattern -> last time
 
   // Addon system
-  private _addons: import('./addon').GlyftAddon[] = [];
+  private _addons: import('./types').GlyftAddon[] = [];
 
   /**
    * Create a new Glyft game engine instance.
@@ -1612,7 +1612,7 @@ export class GlyftEngine {
    * game.use(projectiles({ types: { bolt: { speed: 200 } } }));
    * ```
    */
-  use(addon: import('./addon').GlyftAddon): this {
+  use(addon: import('./types').GlyftAddon): this {
     if (this._addons.some(a => a.name === addon.name)) {
       console.warn(`[Glyft] Addon '${addon.name}' already registered, skipping.`);
       return this;
@@ -1625,7 +1625,7 @@ export class GlyftEngine {
   /**
    * Get a registered addon by name.
    */
-  addon<T extends import('./addon').GlyftAddon>(name: string): T | undefined {
+  addon<T extends import('./types').GlyftAddon>(name: string): T | undefined {
     return this._addons.find(a => a.name === name) as T | undefined;
   }
 

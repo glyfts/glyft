@@ -3,25 +3,25 @@
   "version": "0.1.0",
   "description": "GPU-first, config-driven WebGL2 framework for tile-based 2D games",
   "type": "module",
-  "main": "dist/glyft.js",
-  "module": "dist/glyft.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "module": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/glyft.js"
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
     },
     "./helpers": {
-      "types": "./dist/helpers/index.d.ts",
-      "import": "./dist/helpers/index.js"
+      "types": "./dist/src/helpers/index.d.ts",
+      "import": "./dist/src/helpers/index.js"
     },
     "./adapters/wyrt": {
-      "types": "./dist/adapters/wyrt.d.ts",
-      "import": "./dist/adapters/wyrt.js"
+      "types": "./dist/src/adapters/wyrt.d.ts",
+      "import": "./dist/src/adapters/wyrt.js"
     },
     "./adapters/websocket": {
-      "types": "./dist/adapters/websocket.d.ts",
-      "import": "./dist/adapters/websocket.js"
+      "types": "./dist/src/adapters/websocket.d.ts",
+      "import": "./dist/src/adapters/websocket.js"
     },
     "./addons": {
       "types": "./dist/addons/index.d.ts",
@@ -50,7 +50,8 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "addons"
   ],
   "scripts": {
     "dev": "vite",

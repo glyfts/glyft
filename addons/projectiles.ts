@@ -22,8 +22,7 @@
  * @packageDocumentation
  */
 
-import type { GlyftAddon } from '../addon';
-import type { Glyft, Sprite, Atlas } from '../types';
+import type { GlyftAddon, Glyft, Sprite, Atlas } from '../src/types';
 
 /** Projectile type definition */
 export interface ProjectileTypeDef {

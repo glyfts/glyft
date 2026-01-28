@@ -32,8 +32,7 @@
  * @packageDocumentation
  */
 
-import type { GlyftAddon } from '../addon';
-import type { Glyft, Sprite, Atlas, TileMap } from '../types';
+import type { GlyftAddon, Glyft, Sprite, Atlas, TileMap } from '../src/types';
 import type { ProjectileAddon } from './projectiles';
 import type { AIAddon } from './ai';
 import type { DeathAddon } from './death';

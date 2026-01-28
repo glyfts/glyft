@@ -32,7 +32,7 @@ export { GlyftEngine as Glyft } from './glyft';
 export { GlyftError } from './renderer';
 
 // Addon system
-export type { GlyftAddon } from './addon';
+export type { GlyftAddon } from './types';
 
 // Tween system
 export { TweenManager } from './tween';

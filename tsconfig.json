@@ -11,7 +11,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": [],
     "resolveJsonModule": true,
@@ -21,6 +21,6 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "addons/**/*"],
   "exclude": ["node_modules", "dist", "examples"]
 }

@@ -10,16 +10,18 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: [
+        resolve(__dirname, 'src/index.ts'),
+        resolve(__dirname, 'addons/index.ts'),
+      ],
       name: 'Glyft',
-      fileName: 'glyft',
       formats: ['es'],
     },
     rollupOptions: {
       external: [],
       output: {
         preserveModules: true,
-        preserveModulesRoot: 'src',
+        preserveModulesRoot: '.',
       },
     },
     sourcemap: true,
