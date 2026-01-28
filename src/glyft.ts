@@ -41,6 +41,7 @@ import { createFloatTextManager, generateFontAtlas, packColorF32, type FloatText
 import { createLabelManager, type LabelManager, type LabelSpriteData } from './labels';
 import { createHpBarManager, type HpBarManager } from './hpbars';
 import { createParticleManager, type ParticleManager } from './particles';
+import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -167,6 +168,13 @@ export class GlyftEngine {
   private _labelManager!: LabelManager;
   private _hpBarManager!: HpBarManager;
   private _particleManager!: ParticleManager;
+
+  // Overlay (lazy init — only created when game.overlay is accessed)
+  private _overlayCanvas: HTMLCanvasElement | null = null;
+  private _overlayCtx: CanvasRenderingContext2D | null = null;
+  private _overlayTexture: WebGLTexture | null = null;
+  private _overlayShader: ShaderProgram | null = null;
+  private _overlayActive = false;
 
   // Depth sorting
   private _depthSortCounter = 0;
@@ -413,6 +421,11 @@ export class GlyftEngine {
 
   get stats(): Stats {
     return this._stats;
+  }
+
+  get overlay(): CanvasRenderingContext2D {
+    if (!this._overlayCtx) this._initOverlay();
+    return this._overlayCtx!;
   }
 
   // ---------------------------------------------------------------------------
@@ -1685,6 +1698,11 @@ export class GlyftEngine {
     // Run reactive sound triggers
     this._updateReactiveSounds();
 
+    // Clear overlay canvas before addons draw on it
+    if (this._overlayActive && this._overlayCtx) {
+      this._overlayCtx.clearRect(0, 0, this._overlayCanvas!.width, this._overlayCanvas!.height);
+    }
+
     // Addon: postPhysics (after collisions, before render)
     for (const addon of this._addons) addon.postPhysics?.(this._dt);
 
@@ -2104,6 +2122,53 @@ export class GlyftEngine {
     gl.bindVertexArray(null);
   }
 
+  private _initOverlay(): void {
+    const gl = this.gl;
+    const viewport = this.config.settings.viewport;
+
+    this._overlayCanvas = document.createElement('canvas');
+    this._overlayCanvas.width = viewport[0];
+    this._overlayCanvas.height = viewport[1];
+    this._overlayCtx = this._overlayCanvas.getContext('2d')!;
+
+    this._overlayTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this._overlayTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, viewport[0], viewport[1], 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    this._overlayShader = compileShader(
+      gl,
+      overlayVertexShader,
+      overlayFragmentShader,
+      ['u_overlayTexture'],
+      ['a_position'],
+    );
+
+    this._overlayActive = true;
+  }
+
+  private _renderOverlay(): void {
+    if (!this._overlayActive || !this._overlayCanvas || !this._overlayTexture || !this._overlayShader) return;
+
+    const gl = this.gl;
+
+    gl.bindTexture(gl.TEXTURE_2D, this._overlayTexture);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this._overlayCanvas);
+
+    gl.useProgram(this._overlayShader.program);
+    gl.bindVertexArray(this._quadVAO);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this._overlayTexture);
+    gl.uniform1i(this._overlayShader.uniforms['u_overlayTexture'], 0);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.bindVertexArray(null);
+  }
+
   private _render(): void {
     const gl = this.gl;
     const viewport = this.config.settings.viewport;
@@ -2149,8 +2214,11 @@ export class GlyftEngine {
     // Render particles (after HP bars, before float text)
     this._particleManager.render(projection, this._time, this._camera.x, this._camera.y);
 
-    // Render floating text (on top of everything)
+    // Render floating text (on top of everything except overlay)
     this._floatTextManager.render(projection, this._time, this._camera.x, this._camera.y);
+
+    // Render overlay (screen-space Canvas2D → WebGL texture)
+    this._renderOverlay();
   }
 
   private _calculateProjection(): Float32Array {

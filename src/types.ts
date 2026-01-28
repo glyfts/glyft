@@ -828,6 +828,8 @@ export interface Glyft {
   readonly time: number;
   /** Delta time */
   readonly dt: number;
+  /** Screen-space overlay for HUD/UI. Lazily initialized, cleared each frame. */
+  readonly overlay: CanvasRenderingContext2D;
 
   /** Load texture atlas */
   loadAtlas(imagePath: string, dataPath: string | object): Promise<Atlas>;
