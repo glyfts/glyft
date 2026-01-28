@@ -37,6 +37,7 @@ import type { ProjectileAddon } from './projectiles';
 import type { AIAddon } from './ai';
 import type { DeathAddon } from './death';
 import type { DialogueAddon } from './dialogue';
+import type { HudAddon } from './hud';
 
 /** Spawn definition for a room */
 export interface SpawnDef {
@@ -248,6 +249,12 @@ export function rooms(config: RoomConfig): RoomAddon {
     // Call onEnter
     if (def.onEnter) {
       def.onEnter();
+    }
+
+    // Announce room name via HUD
+    const hudAddon = game.addon<HudAddon>('hud');
+    if (hudAddon) {
+      hudAddon.announce(def.name ?? roomId);
     }
   }
 

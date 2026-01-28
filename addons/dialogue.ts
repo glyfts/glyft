@@ -33,6 +33,7 @@
  */
 
 import type { GlyftAddon, Glyft, Sprite } from '../src/types';
+import type { HudAddon } from './hud';
 
 /** Dialogue definition */
 export interface DialogueDef {
@@ -154,6 +155,10 @@ export function dialogue(config: DialogueAddonConfig): DialogueAddon {
 
     config.onStart?.(dialogueId, def.speaker);
     config.onLine?.(dialogueId, 0, def.lines[0], def.speaker);
+
+    // Notify HUD
+    const hudAddon = game.addon<HudAddon>('hud');
+    if (hudAddon) hudAddon.showDialogue(def.speaker ?? null, def.lines[0], 0, def.lines.length);
   }
 
   function _advance() {
@@ -179,8 +184,16 @@ export function dialogue(config: DialogueAddonConfig): DialogueAddon {
 
       config.onEnd?.(id);
       def.onComplete?.();
+
+      // Notify HUD
+      const hudAddon = game.addon<HudAddon>('hud');
+      if (hudAddon) hudAddon.hideDialogue();
     } else {
       config.onLine?.(currentId, currentIndex, currentDef.lines[currentIndex], currentDef.speaker);
+
+      // Notify HUD
+      const hudAddon = game.addon<HudAddon>('hud');
+      if (hudAddon) hudAddon.showDialogue(currentDef.speaker ?? null, currentDef.lines[currentIndex], currentIndex, currentDef.lines.length);
     }
   }
 
