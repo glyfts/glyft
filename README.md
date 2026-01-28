@@ -106,7 +106,6 @@ Glyft batches everything into a single draw call per texture atlas. Animation, d
 
 | Sprites | FPS | Draw Calls |
 |---------|-----|------------|
-| 1,000 | 60 | 1 |
 | 5,000 | 60 | 1 |
 | 10,000 | 30-40 | 1 |
 | 25,000+ | 15-20 | 1 |
