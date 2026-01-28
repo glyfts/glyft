@@ -122,7 +122,8 @@ Glyft batches everything into a single draw call per texture atlas. Animation, d
 - **Declarative music** - Melodies and pads from note sequences, no audio files needed
 - **Reactive sounds** - Pattern-matched triggers with spatial audio
 - **Collision system** - Pattern-based rules with damage, knockback, magnetize, particles
-- **Addon system** - `game.use()` plugins for projectiles, AI, rooms, dialogue, death
+- **Canvas HUD** - Multi-panel stats, level/XP bar, room announcements, dialogue box
+- **Addon system** - `game.use()` plugins for projectiles, AI, rooms, dialogue, death, HUD
 - **Tween system** - Animate any property with easing curves
 - **Tiled map loader** - Import maps from Tiled editor
 - **Zero dependencies** - Pure TypeScript + WebGL2
@@ -132,13 +133,21 @@ Glyft batches everything into a single draw call per texture atlas. Animation, d
 Opt-in modules that extend the engine with common game systems. Each addon is self-contained and tree-shakeable.
 
 ```typescript
-import { projectiles, ai, death, rooms, dialogue } from 'glyft/addons';
+import { projectiles, ai, death, rooms, dialogue, hud } from 'glyft/addons';
 
 game.use(projectiles({ types: { bolt: { speed: 200, cooldown: 0.3 } } }));
 game.use(ai({ behaviors: { chaser: { type: 'chase', speed: 30, range: 150 } } }));
 game.use(death({ rules: { enemy: { particles: 'burst', xpReward: 10 } } }));
 game.use(rooms({ atlas, startRoom: 'village', rooms: { /* ... */ } }));
 game.use(dialogue({ dialogues: { elder: { lines: ['Welcome!'], speaker: 'Elder' } } }));
+game.use(hud({
+  panels: [
+    { position: 'top-left', stats: [{ stat: 'hp', label: '\u2665', color: 0xff4444, max: 100 }] },
+    { position: 'top-right', stats: [{ stat: 'coins', label: '\u25cf', color: 0xffdd44 }] },
+  ],
+  announcement: { hold: 2.0 },
+  dialogue: {},
+}));
 ```
 
 | Addon | Purpose |
@@ -148,6 +157,7 @@ game.use(dialogue({ dialogues: { elder: { lines: ['Welcome!'], speaker: 'Elder' 
 | `death` | HP death checks, rewards, player respawn |
 | `rooms` | Room transitions, spawn management, exit detection |
 | `dialogue` | NPC interaction with proximity detection and events |
+| `hud` | Canvas overlay with stat panels, level/XP bar, announcements, dialogue box |
 
 ## Declarative Audio
 
