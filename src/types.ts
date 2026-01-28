@@ -118,6 +118,50 @@ export interface StatDef {
   min?: number;
 }
 
+/**
+ * Declarative sound effect definition.
+ *
+ * Each SfxDef describes a procedurally-generated sound using Web Audio oscillators.
+ * All fields are serializable JSON — no callbacks, no audio files needed.
+ *
+ * @example
+ * ```typescript
+ * sfx: {
+ *   laser:  { wave: 'sine', freq: 880, duration: 0.15, sweep: 440 },
+ *   coin:   { wave: 'square', freq: 1400, duration: 0.1, sweep: 2100, sweepTime: 0.05 },
+ *   hurt:   { wave: 'sawtooth', freq: 200, duration: 0.2, decay: 'exp' },
+ *   step:   { wave: 'triangle', freq: [100, 150], duration: 0.05 },
+ *   explode:{ wave: 'sawtooth', freq: 80, duration: 0.4, noise: 0.3, filter: 'lowpass', filterFreq: 600 },
+ * }
+ * ```
+ */
+export interface SfxDef {
+  /** Oscillator waveform (default: 'square') */
+  wave?: 'sine' | 'square' | 'sawtooth' | 'triangle';
+  /** Base frequency in Hz, or [min, max] for random (default: 440) */
+  freq?: number | [number, number];
+  /** Duration in seconds (default: 0.1) */
+  duration?: number;
+  /** Frequency to sweep to over sweepTime (pitch bend) */
+  sweep?: number;
+  /** Time in seconds for the frequency sweep (default: duration) */
+  sweepTime?: number;
+  /** Gain envelope decay curve: 'exp' for exponential, 'linear' for linear (default: 'exp') */
+  decay?: 'exp' | 'linear';
+  /** Attack time in seconds — fade in from silence (default: 0) */
+  attack?: number;
+  /** Detune in cents — shifts pitch (default: 0) */
+  detune?: number;
+  /** Noise mix 0-1 — blends white noise with the oscillator (default: 0) */
+  noise?: number;
+  /** Biquad filter type (default: none) */
+  filter?: 'lowpass' | 'highpass' | 'bandpass';
+  /** Filter cutoff frequency in Hz (default: 1000) */
+  filterFreq?: number;
+  /** Filter Q / resonance (default: 1) */
+  filterQ?: number;
+}
+
 /** Sound rule options */
 export interface SoundRule {
   sound: string;
@@ -128,12 +172,55 @@ export interface SoundRule {
   spatial?: boolean;
 }
 
-/** Music track definition */
+/**
+ * Music track definition.
+ *
+ * Three modes:
+ * - **File**: Set `track` to an audio URL (e.g. `'music/overworld.mp3'`)
+ * - **Preset**: Set `track` to a `$name` (e.g. `'$peaceful'`)
+ * - **Melody**: Provide `notes` array for declarative procedural music
+ *
+ * @example
+ * ```typescript
+ * music: {
+ *   // File-based
+ *   overworld: { track: 'music/overworld.mp3', loop: true },
+ *   // Declarative melody
+ *   village: {
+ *     bpm: 72, wave: 'sine',
+ *     notes: ['C4', 'E4', 'G4', 'C5', 'B4', 'G4', 'E4', 'C4'],
+ *     pad: { wave: 'sine', freq: 131, volume: 0.3 },
+ *     volume: 0.8,
+ *   },
+ * }
+ * ```
+ */
 export interface MusicTrack {
-  track: string;
+  /** Audio file URL or $preset name (omit for declarative melody) */
+  track?: string;
   loop?: boolean;
   fadeIn?: number;
+  /** Master volume for this track (default: 1.0) */
   volume?: number;
+  /** Tempo in BPM — enables declarative melody mode (default: 120) */
+  bpm?: number;
+  /** Oscillator waveform for melody notes (default: 'sine') */
+  wave?: 'sine' | 'square' | 'sawtooth' | 'triangle';
+  /** Note sequence — note names ('C4', 'D#4'), Hz frequencies, or [note, duration] tuples.
+   *  When a note is a tuple, the second element is its duration in beats (default: 1).
+   *  Simple notes use the global noteLength. Example:
+   *  `['C4', 'E4', ['G4', 0.5], 'C5']` */
+  notes?: (string | number | [string | number, number])[];
+  /** Default duration of each note in beats (default: 1). Overridden per-note with tuple syntax. */
+  noteLength?: number;
+  /** Background pad/drone played under the melody */
+  pad?: {
+    wave?: 'sine' | 'square' | 'sawtooth' | 'triangle';
+    /** Root frequency in Hz for the pad chord */
+    freq: number;
+    /** Pad volume relative to track volume (default: 0.3) */
+    volume?: number;
+  };
 }
 
 /** Named animation definition for override animations */
@@ -279,6 +366,13 @@ export interface GlyftConfig {
    * @example { hp: { default: 100, max: 100 }, coins: { default: 0 } }
    */
   stats?: Record<string, StatDef>;
+
+  /**
+   * Named sound effect definitions — procedurally generated, no audio files needed.
+   * Referenced by name in sound rules and addon configs.
+   * @example { laser: { wave: 'sine', freq: 880, duration: 0.15, sweep: 440 } }
+   */
+  sfx?: Record<string, SfxDef>;
 
   /**
    * Reactive sound rules - sounds trigger automatically.
@@ -757,6 +851,12 @@ export interface Glyft {
   /** Reload config (hot reload) */
   reloadConfig(config: Partial<GlyftConfig>): void;
 
+  /** Register an addon to extend engine functionality */
+  use(addon: import('./addon').GlyftAddon): this;
+
+  /** Get a registered addon by name */
+  addon<T extends import('./addon').GlyftAddon>(name: string): T | undefined;
+
   /** Register a game-level pointer event listener. */
   on(event: 'pointerdown', callback: (e: SpritePointerEvent) => void): void;
 
@@ -766,7 +866,8 @@ export interface Glyft {
   /** Sound system */
   readonly sounds: {
     define(rules: Record<string, string | SoundRule>): void;
-    play(sound: string, options?: { volume?: number; x?: number }): void;
+    defineSfx(defs: Record<string, SfxDef>): void;
+    play(sound: string, options?: { volume?: number; pitch?: number; x?: number }): void;
   };
 
   /** Music system */

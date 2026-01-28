@@ -31,6 +31,9 @@ export { GlyftEngine as Glyft } from './glyft';
 // Error class for catching Glyft-specific errors
 export { GlyftError } from './renderer';
 
+// Addon system
+export type { GlyftAddon } from './addon';
+
 // Tween system
 export { TweenManager } from './tween';
 export type { TweenProps, TweenOptions, TweenHandle, EaseName } from './tween';
@@ -45,6 +48,7 @@ export type {
   GlyftSettings,
   SpriteMode,
   StatDef,
+  SfxDef,
   SoundRule,
   MusicTrack,
   CollisionAction,

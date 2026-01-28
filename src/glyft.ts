@@ -189,6 +189,9 @@ export class GlyftEngine {
   // Sound timing (for intervals and cooldowns)
   private _soundLastPlayed: Map<string, number> = new Map(); // pattern -> last time
 
+  // Addon system
+  private _addons: import('./addon').GlyftAddon[] = [];
+
   /**
    * Create a new Glyft game engine instance.
    *
@@ -270,6 +273,11 @@ export class GlyftEngine {
       for (const [name, def] of Object.entries(config.stats)) {
         this._stats[name] = def.default;
       }
+    }
+
+    // Load sfx definitions from config
+    if (config.sfx) {
+      this._soundManager.defineSfx(config.sfx);
     }
 
     // Load reactive rules from config
@@ -1481,6 +1489,9 @@ export class GlyftEngine {
         this._soundRules.set(pattern, rule);
       }
     },
+    defineSfx: (defs: Record<string, import('./types').SfxDef>) => {
+      this._soundManager.defineSfx(defs);
+    },
     play: (sound: string, options?: { volume?: number; pitch?: number; x?: number }) => {
       this._soundManager.play(sound, options);
     },
@@ -1562,6 +1573,9 @@ export class GlyftEngine {
   reloadConfig(config: Partial<GlyftConfig>): void {
     Object.assign(this.config, config);
 
+    if (config.sfx) {
+      this._soundManager.defineSfx(config.sfx);
+    }
     if (config.sounds) {
       this._soundRules.clear();
       for (const [pattern, rule] of Object.entries(config.sounds)) {
@@ -1580,6 +1594,39 @@ export class GlyftEngine {
         this._particleManager.define(name, def);
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Addon System
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Register an addon to extend engine functionality.
+   * Addons hook into the game loop and access the engine through the public API.
+   *
+   * @returns this (for chaining)
+   *
+   * @example
+   * ```typescript
+   * import { projectiles } from 'glyft/addons/projectiles';
+   * game.use(projectiles({ types: { bolt: { speed: 200 } } }));
+   * ```
+   */
+  use(addon: import('./addon').GlyftAddon): this {
+    if (this._addons.some(a => a.name === addon.name)) {
+      console.warn(`[Glyft] Addon '${addon.name}' already registered, skipping.`);
+      return this;
+    }
+    this._addons.push(addon);
+    addon.init(this as unknown as import('./types').Glyft);
+    return this;
+  }
+
+  /**
+   * Get a registered addon by name.
+   */
+  addon<T extends import('./addon').GlyftAddon>(name: string): T | undefined {
+    return this._addons.find(a => a.name === name) as T | undefined;
   }
 
   // ---------------------------------------------------------------------------
@@ -1609,9 +1656,6 @@ export class GlyftEngine {
     this._time += this._dt;
     this._lastFrameTime = now;
 
-    // Update input
-    this._input.update();
-
     // Update tweens
     this._tweenManager.update(this._dt * 1000);
 
@@ -1621,10 +1665,16 @@ export class GlyftEngine {
     // Update pointer hover tracking (fires pointerover/pointerout)
     this._updatePointerEvents();
 
+    // Addon: preUpdate (before user callbacks)
+    for (const addon of this._addons) addon.preUpdate?.(this._dt);
+
     // Run user update callbacks
     for (const callback of this._updateCallbacks) {
       callback(this._dt);
     }
+
+    // Addon: postUpdate (after user callbacks, before physics)
+    for (const addon of this._addons) addon.postUpdate?.(this._dt);
 
     // Run magnetize (attract sprites toward targets)
     this._updateMagnetize(this._dt);
@@ -1635,11 +1685,17 @@ export class GlyftEngine {
     // Run reactive sound triggers
     this._updateReactiveSounds();
 
+    // Addon: postPhysics (after collisions, before render)
+    for (const addon of this._addons) addon.postPhysics?.(this._dt);
+
     // Update floating text (expire old entries)
     this._floatTextManager.update(this._time);
 
     // Update particles (expire dead particles)
     this._particleManager.update(this._time);
+
+    // Clear per-frame input state (justPressed/justReleased)
+    this._input.update();
 
     // Render
     this._render();

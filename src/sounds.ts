@@ -5,11 +5,13 @@
  * No playSound() calls scattered through game code.
  */
 
-import type { SoundRule } from './types';
+import type { SoundRule, SfxDef } from './types';
 
 export interface SoundManager {
   /** Define sound rules */
   define(rules: Record<string, string | SoundRule>): void;
+  /** Register named sound effect definitions */
+  defineSfx(defs: Record<string, SfxDef>): void;
   /** Manually play a sound */
   play(sound: string, options?: { volume?: number; pitch?: number; x?: number }): void;
   /** Set master volume (0-1) */
@@ -116,12 +118,46 @@ export function createSoundManager(viewportWidth: number): SoundManager {
     }
     return value;
   }
-  void _randomize; // Will be used for reactive sounds
 
-  // Play procedural sound (for testing without audio files)
-  // Formats: $beep, $blip, $hit, $step, $coin, $hurt
-  function playProcedural(
-    type: string,
+  // ---------------------------------------------------------------------------
+  // Declarative SFX System
+  // ---------------------------------------------------------------------------
+
+  // Named sound effect definitions
+  const sfxDefs = new Map<string, SfxDef>();
+
+  // Built-in presets (legacy $name aliases)
+  const BUILTIN_SFX: Record<string, SfxDef> = {
+    beep:  { wave: 'square',   freq: 880,        duration: 0.1 },
+    blip:  { wave: 'sine',     freq: 1200,       duration: 0.05 },
+    hit:   { wave: 'sawtooth', freq: 150,        duration: 0.15 },
+    step:  { wave: 'triangle', freq: [100, 150],  duration: 0.05 },
+    coin:  { wave: 'square',   freq: 1400,       duration: 0.1, sweep: 2100, sweepTime: 0.05 },
+    hurt:  { wave: 'sawtooth', freq: 200,        duration: 0.2 },
+  };
+
+  // Resolve a sound name to an SfxDef (user defs > builtins > $prefix builtins)
+  function _resolveSfx(name: string): SfxDef | null {
+    // User-defined sfx (exact name)
+    const userDef = sfxDefs.get(name);
+    if (userDef) return userDef;
+
+    // $preset shorthand: strip $ prefix and check builtins
+    if (name.startsWith('$')) {
+      const key = name.slice(1);
+      // Check user defs first (user can override built-in names)
+      const userOverride = sfxDefs.get(key);
+      if (userOverride) return userOverride;
+      return BUILTIN_SFX[key] ?? null;
+    }
+
+    // Check builtins by bare name
+    return BUILTIN_SFX[name] ?? null;
+  }
+
+  // Play a sound effect from an SfxDef
+  function playSfx(
+    def: SfxDef,
     volume: number,
     pitch: number,
     x?: number
@@ -129,76 +165,104 @@ export function createSoundManager(viewportWidth: number): SoundManager {
     const context = ensureContext();
     if (!masterGain) return;
 
+    const now = context.currentTime;
+    const duration = def.duration ?? 0.1;
+    const attack = def.attack ?? 0;
+    const baseFreq = _randomize(def.freq ?? 440) * pitch;
+    const waveType = def.wave ?? 'square';
+
+    // -- Oscillator --
     const osc = context.createOscillator();
+    osc.type = waveType;
+    if (def.detune) osc.detune.value = def.detune;
+
+    // Frequency + optional sweep
+    if (def.sweep !== undefined) {
+      const sweepTime = def.sweepTime ?? duration;
+      osc.frequency.setValueAtTime(baseFreq, now);
+      osc.frequency.exponentialRampToValueAtTime(
+        Math.max(def.sweep * pitch, 1), now + sweepTime
+      );
+    } else {
+      osc.frequency.value = baseFreq;
+    }
+
+    // -- Gain envelope --
     const gainNode = context.createGain();
+    const peakGain = volume * 0.3;
+    if (attack > 0) {
+      gainNode.gain.setValueAtTime(0.001, now);
+      gainNode.gain.exponentialRampToValueAtTime(peakGain, now + attack);
+    } else {
+      gainNode.gain.setValueAtTime(peakGain, now);
+    }
+
+    // Decay
+    const decayStart = now + attack;
+    const decayEnd = now + duration;
+    if (def.decay === 'linear') {
+      gainNode.gain.linearRampToValueAtTime(0.001, decayEnd);
+    } else {
+      // Default: exponential decay
+      gainNode.gain.exponentialRampToValueAtTime(0.001, decayEnd);
+    }
+
+    // -- Panning --
     const panNode = context.createStereoPanner();
-
-    // Configure based on type
-    let freq = 440;
-    let duration = 0.1;
-    let oscType: OscillatorType = 'square';
-
-    switch (type) {
-      case '$beep':
-        freq = 880;
-        duration = 0.1;
-        oscType = 'square';
-        break;
-      case '$blip':
-        freq = 1200;
-        duration = 0.05;
-        oscType = 'sine';
-        break;
-      case '$hit':
-        freq = 150;
-        duration = 0.15;
-        oscType = 'sawtooth';
-        break;
-      case '$step':
-        freq = 100 + Math.random() * 50;
-        duration = 0.05;
-        oscType = 'triangle';
-        break;
-      case '$coin':
-        freq = 1400;
-        duration = 0.1;
-        oscType = 'square';
-        // Coin has pitch sweep
-        osc.frequency.setValueAtTime(freq * pitch, context.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(freq * pitch * 1.5, context.currentTime + 0.05);
-        break;
-      case '$hurt':
-        freq = 200;
-        duration = 0.2;
-        oscType = 'sawtooth';
-        break;
-      default:
-        freq = 440;
-        duration = 0.1;
-        oscType = 'square';
-    }
-
-    osc.type = oscType;
-    if (type !== '$coin') {
-      osc.frequency.value = freq * pitch;
-    }
-
-    // Volume envelope
-    gainNode.gain.setValueAtTime(volume * 0.3, context.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, context.currentTime + duration);
-
-    // Panning
     if (x !== undefined) {
       panNode.pan.value = Math.max(-1, Math.min(1, (x / viewportWidth) * 2 - 1));
     }
 
-    // Connect
-    osc.connect(gainNode);
+    // -- Optional biquad filter --
+    let filterNode: BiquadFilterNode | null = null;
+    if (def.filter) {
+      filterNode = context.createBiquadFilter();
+      filterNode.type = def.filter;
+      filterNode.frequency.value = def.filterFreq ?? 1000;
+      filterNode.Q.value = def.filterQ ?? 1;
+    }
+
+    // -- Optional noise layer --
+    let noiseSource: AudioBufferSourceNode | null = null;
+    let noiseGain: GainNode | null = null;
+    if (def.noise && def.noise > 0) {
+      const bufferSize = Math.ceil(context.sampleRate * duration);
+      const noiseBuffer = context.createBuffer(1, bufferSize, context.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      noiseSource = context.createBufferSource();
+      noiseSource.buffer = noiseBuffer;
+
+      noiseGain = context.createGain();
+      noiseGain.gain.setValueAtTime(peakGain * def.noise, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, decayEnd);
+    }
+
+    // -- Connect graph --
+    // osc -> [filter] -> gainNode -> panNode -> masterGain
+    let oscOutput: AudioNode = osc;
+    if (filterNode) {
+      osc.connect(filterNode);
+      oscOutput = filterNode;
+    }
+    oscOutput.connect(gainNode);
     gainNode.connect(panNode);
     panNode.connect(masterGain);
 
-    osc.start();
-    osc.stop(context.currentTime + duration);
+    // noise -> noiseGain -> panNode (shares pan + master)
+    if (noiseSource && noiseGain) {
+      noiseSource.connect(noiseGain);
+      noiseGain.connect(panNode);
+      noiseSource.start(now);
+      noiseSource.stop(now + duration);
+    }
+
+    void decayStart; // attack informs decay timing via gain scheduling
+
+    osc.start(now);
+    osc.stop(now + duration);
   }
 
   return {
@@ -216,8 +280,8 @@ export function createSoundManager(viewportWidth: number): SoundManager {
         };
         rules.set(pattern, parsed);
 
-        // Preload the sound (skip procedural sounds)
-        if (!parsed.sound.startsWith('$')) {
+        // Preload the sound (skip sfx/procedural sounds)
+        if (!parsed.sound.startsWith('$') && !_resolveSfx(parsed.sound)) {
           loadSound(parsed.sound).catch(() => {
             console.warn(`[Glyft] Failed to load sound: ${parsed.sound}`);
           });
@@ -225,37 +289,45 @@ export function createSoundManager(viewportWidth: number): SoundManager {
       }
     },
 
-    play(sound: string, options?: { volume?: number; pitch?: number; x?: number }): void {
-      const cached = sounds.get(sound);
-      if (!cached) {
-        // Check for procedural sound prefix
-        if (sound.startsWith('$')) {
-          playProcedural(sound, options?.volume ?? 1, options?.pitch ?? 1, options?.x);
-          return;
-        }
+    defineSfx(defs: Record<string, SfxDef>): void {
+      for (const [name, def] of Object.entries(defs)) {
+        sfxDefs.set(name, def);
+      }
+    },
 
-        // Try to load and play
-        loadSound(sound)
-          .then((buffer) => {
-            const vol = options?.volume ?? 1;
-            const pitch = options?.pitch ?? 1;
-            const pan = options?.x !== undefined
-              ? (options.x / viewportWidth) * 2 - 1
-              : 0;
-            playBuffer(buffer, vol, pitch, pan);
-          })
-          .catch(() => {
-            console.warn(`[Glyft] Sound not found: ${sound}`);
-          });
+    play(sound: string, options?: { volume?: number; pitch?: number; x?: number }): void {
+      // Try sfx definitions first (user-defined, then $presets, then builtins)
+      const sfx = _resolveSfx(sound);
+      if (sfx) {
+        playSfx(sfx, options?.volume ?? 1, options?.pitch ?? 1, options?.x);
         return;
       }
 
-      const vol = options?.volume ?? 1;
-      const pitch = options?.pitch ?? 1;
-      const pan = options?.x !== undefined
-        ? (options.x / viewportWidth) * 2 - 1
-        : 0;
-      playBuffer(cached.buffer, vol, pitch, pan);
+      // Try loaded audio buffer
+      const cached = sounds.get(sound);
+      if (cached) {
+        const vol = options?.volume ?? 1;
+        const pitch = options?.pitch ?? 1;
+        const pan = options?.x !== undefined
+          ? (options.x / viewportWidth) * 2 - 1
+          : 0;
+        playBuffer(cached.buffer, vol, pitch, pan);
+        return;
+      }
+
+      // Try to load as audio file
+      loadSound(sound)
+        .then((buffer) => {
+          const vol = options?.volume ?? 1;
+          const pitch = options?.pitch ?? 1;
+          const pan = options?.x !== undefined
+            ? (options.x / viewportWidth) * 2 - 1
+            : 0;
+          playBuffer(buffer, vol, pitch, pan);
+        })
+        .catch(() => {
+          console.warn(`[Glyft] Sound not found: ${sound}`);
+        });
     },
 
     setVolume(volume: number): void {

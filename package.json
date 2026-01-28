@@ -22,6 +22,30 @@
     "./adapters/websocket": {
       "types": "./dist/adapters/websocket.d.ts",
       "import": "./dist/adapters/websocket.js"
+    },
+    "./addons": {
+      "types": "./dist/addons/index.d.ts",
+      "import": "./dist/addons/index.js"
+    },
+    "./addons/projectiles": {
+      "types": "./dist/addons/projectiles.d.ts",
+      "import": "./dist/addons/projectiles.js"
+    },
+    "./addons/ai": {
+      "types": "./dist/addons/ai.d.ts",
+      "import": "./dist/addons/ai.js"
+    },
+    "./addons/death": {
+      "types": "./dist/addons/death.d.ts",
+      "import": "./dist/addons/death.js"
+    },
+    "./addons/rooms": {
+      "types": "./dist/addons/rooms.d.ts",
+      "import": "./dist/addons/rooms.js"
+    },
+    "./addons/dialogue": {
+      "types": "./dist/addons/dialogue.d.ts",
+      "import": "./dist/addons/dialogue.js"
     }
   },
   "files": [

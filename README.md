@@ -118,11 +118,66 @@ Glyft batches everything into a single draw call per texture atlas. Animation, d
 - **GPU HP bars** - Per-sprite health bars rendered entirely on the GPU
 - **GPU labels** - Sprite names and icon indicators with proximity visibility
 - **GPU floating text** - Damage numbers, pickups, XP popups
+- **Declarative SFX** - Design sounds with config, no audio files needed
+- **Declarative music** - Melodies and pads from note sequences, no audio files needed
 - **Reactive sounds** - Pattern-matched triggers with spatial audio
 - **Collision system** - Pattern-based rules with damage, knockback, magnetize, particles
+- **Addon system** - `game.use()` plugins for projectiles, AI, rooms, dialogue, death
 - **Tween system** - Animate any property with easing curves
 - **Tiled map loader** - Import maps from Tiled editor
 - **Zero dependencies** - Pure TypeScript + WebGL2
+
+## Addons
+
+Opt-in modules that extend the engine with common game systems. Each addon is self-contained and tree-shakeable.
+
+```typescript
+import { projectiles, ai, death, rooms, dialogue } from 'glyft/addons';
+
+game.use(projectiles({ types: { bolt: { speed: 200, cooldown: 0.3 } } }));
+game.use(ai({ behaviors: { chaser: { type: 'chase', speed: 30, range: 150 } } }));
+game.use(death({ rules: { enemy: { particles: 'burst', xpReward: 10 } } }));
+game.use(rooms({ atlas, startRoom: 'village', rooms: { /* ... */ } }));
+game.use(dialogue({ dialogues: { elder: { lines: ['Welcome!'], speaker: 'Elder' } } }));
+```
+
+| Addon | Purpose |
+|-------|---------|
+| `projectiles` | Fire projectiles with cooldown, lifetime, wall collision |
+| `ai` | Enemy behaviors: chase, wander, patrol, flee, idle |
+| `death` | HP death checks, rewards, player respawn |
+| `rooms` | Room transitions, spawn management, exit detection |
+| `dialogue` | NPC interaction with proximity detection and events |
+
+## Declarative Audio
+
+Define sound effects and music as config data - no audio files required.
+
+```typescript
+const config = {
+  // Sound effects — procedural synthesis from parameters
+  sfx: {
+    laser:  { wave: 'sine', freq: 880, duration: 0.15, sweep: 440 },
+    coin:   { wave: 'square', freq: 1400, duration: 0.1, sweep: 2100, sweepTime: 0.05 },
+    hurt:   { wave: 'sawtooth', freq: 200, duration: 0.2, noise: 0.2 },
+  },
+
+  // Music — melodies from note sequences
+  music: {
+    village: {
+      bpm: 56, wave: 'sine',
+      notes: ['C4', 'E4', 'G4', 'C5', 'B4', 'G4', 'E4', 'G4'],
+      pad: { wave: 'sine', freq: 131, volume: 0.3 },
+    },
+  },
+
+  // Reactive triggers use sfx names or built-in $presets
+  sounds: {
+    '[player]:[enemy]': { sound: 'hurt', cooldown: 0.5 },
+    '[player]:moving': { sound: '$step', interval: 0.25 },
+  },
+};
+```
 
 ## Collision Rules
 
