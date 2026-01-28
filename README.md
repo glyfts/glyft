@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="Glyft" width="120" height="120">
+  <img src="https://raw.githubusercontent.com/glyfts/glyft/main/logo.png" alt="Glyft" width="120" height="120">
 </p>
 
 <h1 align="center">Glyft</h1>
@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/glyft"><img src="https://img.shields.io/npm/v/glyft?style=flat-square&color=cb3837" alt="npm"></a>
   <img src="https://img.shields.io/badge/language-TypeScript-3178c6?style=flat-square" alt="TypeScript">
   <img src="https://img.shields.io/badge/runtime-WebGL2-ff6600?style=flat-square" alt="WebGL2">
   <img src="https://img.shields.io/badge/dependencies-0-success?style=flat-square" alt="Zero Dependencies">
@@ -24,7 +25,7 @@
   <a href="https://glyft.dev">Website</a> •
   <a href="https://glyft.dev/docs">Docs</a> •
   <a href="https://glyft.dev/examples">Examples</a> •
-  <a href="#quick-start">Quick Start</a>
+  <a href="https://github.com/glyfts/glyft">GitHub</a>
 </p>
 
 ---
@@ -208,7 +209,7 @@ collisions: {
 ## Examples
 
 ```bash
-git clone https://github.com/AtonalStar/glyft
+git clone https://github.com/glyfts/glyft
 cd glyft && npm install && npm run dev
 # http://localhost:5173/examples/basic/
 # http://localhost:5173/examples/benchmark/
