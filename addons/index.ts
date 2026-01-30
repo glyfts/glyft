@@ -25,7 +25,7 @@ export { death } from './death';
 export type { DeathAddon, DeathAddonConfig, DeathRule, PlayerRespawn } from './death';
 
 export { rooms } from './rooms';
-export type { RoomAddon, RoomConfig, RoomDef, SpawnDef, ExitDef } from './rooms';
+export type { RoomAddon, RoomConfig, RoomDef, SpawnDef, ExitDef, ConnectionDef } from './rooms';
 
 export { dialogue } from './dialogue';
 export type { DialogueAddon, DialogueAddonConfig, DialogueDef } from './dialogue';

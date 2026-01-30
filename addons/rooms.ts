@@ -4,30 +4,32 @@
  * Manages rooms with spawn definitions, exits, and build callbacks.
  * Handles room transitions, sprite cleanup, and exit detection.
  *
+ * ## Connections (Recommended)
+ *
+ * Use `connections` to define bidirectional room links. This automatically
+ * creates exits in both directions and calculates spawn positions.
+ *
  * @example
  * ```typescript
- * import { rooms } from 'glyft/addons/rooms';
- *
  * game.use(rooms({
  *   atlas,
  *   startRoom: 'village',
  *   rooms: {
- *     village: {
- *       width: 24, height: 18,
- *       music: 'peaceful',
- *       spawn: [12, 9],
- *       build: (map, game) => { map.fill(0, 0, 24, 18, 1); },
- *       spawns: [
- *         { type: 'npc', x: 5, y: 5, tags: ['npc'], configure: (s) => { s.label = 'Elder'; } },
- *       ],
- *       exits: [{ x: 23, y: 9, to: 'forest', spawnX: 1, spawnY: 9 }],
- *     },
+ *     village: { width: 24, height: 18, spawn: [12, 9], build: buildVillage },
+ *     forest:  { width: 32, height: 24, build: buildForest },
+ *     dungeon: { width: 20, height: 16, build: buildDungeon },
  *   },
+ *   connections: [
+ *     { rooms: ['village', 'forest'], exits: [[23, 9], [0, 9]] },
+ *     { rooms: ['forest', 'dungeon'], exits: [[31, 12], [0, 6]] },
+ *   ],
  * }));
- *
- * const roomSys = game.addon<RoomAddon>('rooms')!;
- * roomSys.setPlayer(player);
  * ```
+ *
+ * ## Manual Exits (Legacy)
+ *
+ * You can still define exits manually on each room, but you must remember
+ * to create exits in both directions. The addon warns about one-way exits.
  *
  * @packageDocumentation
  */
@@ -89,12 +91,55 @@ export interface RoomDef {
   build?: (map: TileMap, game: Glyft) => void;
   /** Sprites to create in this room */
   spawns?: SpawnDef[];
-  /** Room exits */
+  /** Room exits (prefer using connections instead for bidirectional exits) */
   exits?: ExitDef[];
+  /** Tile index to use for walls (used by edge system). Default: 6 */
+  wallTile?: number;
   /** Called after room is fully loaded */
   onEnter?: () => void;
   /** Called before room is unloaded */
   onExit?: () => void;
+}
+
+/**
+ * Connection definition — bidirectional link between two rooms.
+ * Automatically creates exits in both directions.
+ *
+ * @example
+ * ```typescript
+ * connections: [
+ *   { rooms: ['village', 'forest'], exits: [[23, 9], [0, 9]] },
+ *   { rooms: ['forest', 'dungeon'], exits: [[31, 12], [0, 6]] },
+ * ]
+ * ```
+ */
+export interface ConnectionDef {
+  /** The two rooms being connected: [roomA, roomB] */
+  rooms: [string, string];
+  /** Exit tile positions: [[roomA exit x, y], [roomB exit x, y]] */
+  exits: [[number, number], [number, number]];
+}
+
+/** Edge direction */
+export type Edge = 'north' | 'south' | 'east' | 'west';
+
+/**
+ * Edge connection definition — connects entire edges of two rooms.
+ * Walking off one edge spawns you on the opposite edge of the connected room.
+ *
+ * @example
+ * ```typescript
+ * edges: [
+ *   { rooms: ['village', 'forest'], edges: ['east', 'west'] },
+ *   { rooms: ['clearing', 'edge'], edges: ['north', 'south'] },
+ * ]
+ * ```
+ */
+export interface EdgeConnectionDef {
+  /** The two rooms being connected: [roomA, roomB] */
+  rooms: [string, string];
+  /** Which edge of each room connects: [roomA edge, roomB edge] */
+  edges: [Edge, Edge];
 }
 
 /** Room addon configuration */
@@ -105,6 +150,32 @@ export interface RoomConfig {
   startRoom: string;
   /** Room definitions */
   rooms: Record<string, RoomDef>;
+  /**
+   * Bidirectional room connections using specific tile positions.
+   * Each connection automatically creates exits in both rooms.
+   */
+  connections?: ConnectionDef[];
+  /**
+   * Edge-based room connections. Walking off one edge spawns you on the
+   * opposite edge of the connected room. Simpler than tile-based connections.
+   *
+   * When using edges, the addon automatically:
+   * - Adds walls to all room edges
+   * - Creates doorway openings where connections exist
+   * - Handles collision for walls and doorways
+   *
+   * @example
+   * ```typescript
+   * edges: [
+   *   { rooms: ['village', 'forest'], edges: ['east', 'west'] },
+   * ]
+   * ```
+   */
+  edges?: EdgeConnectionDef[];
+  /** Doorway width in tiles (default: 4) */
+  doorwaySize?: number;
+  /** Default wall tile index when using edges (default: 6). Can be overridden per-room. */
+  defaultWallTile?: number;
   /** Exit cooldown in seconds (default: 0.5) */
   exitCooldown?: number;
 }
@@ -137,6 +208,217 @@ export function rooms(config: RoomConfig): RoomAddon {
   const roomSprites: Sprite[] = [];
   let exitCooldown = 0;
   const exitCooldownDuration = config.exitCooldown ?? 0.5;
+
+  // Calculate spawn position 1 tile inward from exit
+  function calculateSpawn(exitX: number, exitY: number, width: number, height: number): [number, number] {
+    let spawnX = exitX;
+    let spawnY = exitY;
+
+    // West edge → spawn 1 tile right
+    if (exitX <= 1) spawnX = exitX + 1;
+    // East edge → spawn 1 tile left
+    else if (exitX >= width - 2) spawnX = exitX - 1;
+
+    // North edge → spawn 1 tile down
+    if (exitY <= 1) spawnY = exitY + 1;
+    // South edge → spawn 1 tile up
+    else if (exitY >= height - 2) spawnY = exitY - 1;
+
+    return [spawnX, spawnY];
+  }
+
+  // Process connections into bidirectional exits
+  function processConnections() {
+    if (!config.connections) return;
+
+    for (const conn of config.connections) {
+      const [roomA, roomB] = conn.rooms;
+      const [[exitAx, exitAy], [exitBx, exitBy]] = conn.exits;
+
+      const defA = config.rooms[roomA];
+      const defB = config.rooms[roomB];
+
+      if (!defA) {
+        console.warn(`[Glyft:rooms] Connection references unknown room '${roomA}'`);
+        continue;
+      }
+      if (!defB) {
+        console.warn(`[Glyft:rooms] Connection references unknown room '${roomB}'`);
+        continue;
+      }
+
+      // Calculate spawn positions (1 tile inward from exit in target room)
+      const [spawnAx, spawnAy] = calculateSpawn(exitAx, exitAy, defA.width, defA.height);
+      const [spawnBx, spawnBy] = calculateSpawn(exitBx, exitBy, defB.width, defB.height);
+
+      // Add exit A → B (exit in A, spawn in B)
+      defA.exits = defA.exits || [];
+      defA.exits.push({ x: exitAx, y: exitAy, to: roomB, spawnX: spawnBx, spawnY: spawnBy });
+
+      // Add exit B → A (exit in B, spawn in A)
+      defB.exits = defB.exits || [];
+      defB.exits.push({ x: exitBx, y: exitBy, to: roomA, spawnX: spawnAx, spawnY: spawnAy });
+    }
+  }
+
+  // Validate that all exits have return paths (warn about one-way exits)
+  function validateExits() {
+    for (const [roomId, def] of Object.entries(config.rooms)) {
+      if (!def.exits) continue;
+
+      for (const exit of def.exits) {
+        const targetDef = config.rooms[exit.to];
+        if (!targetDef) {
+          console.warn(`[Glyft:rooms] Exit in '${roomId}' points to unknown room '${exit.to}'`);
+          continue;
+        }
+
+        // Check if target room has an exit back
+        const hasReturn = targetDef.exits?.some(e => e.to === roomId);
+        if (!hasReturn) {
+          console.warn(
+            `[Glyft:rooms] One-way exit detected: '${roomId}' → '${exit.to}' ` +
+            `(no return exit). Consider using 'connections' for bidirectional exits.`
+          );
+        }
+      }
+    }
+  }
+
+  // Store edge connections for runtime detection
+  interface EdgeLink {
+    edge: Edge;
+    toRoom: string;
+    toEdge: Edge;
+  }
+  const edgeLinks: Record<string, EdgeLink[]> = {};
+
+  // Process edge connections
+  function processEdges() {
+    if (!config.edges) return;
+
+    for (const conn of config.edges) {
+      const [roomA, roomB] = conn.rooms;
+      const [edgeA, edgeB] = conn.edges;
+
+      const defA = config.rooms[roomA];
+      const defB = config.rooms[roomB];
+
+      if (!defA) {
+        console.warn(`[Glyft:rooms] Edge connection references unknown room '${roomA}'`);
+        continue;
+      }
+      if (!defB) {
+        console.warn(`[Glyft:rooms] Edge connection references unknown room '${roomB}'`);
+        continue;
+      }
+
+      // Store edge links for both rooms
+      edgeLinks[roomA] = edgeLinks[roomA] || [];
+      edgeLinks[roomA].push({ edge: edgeA, toRoom: roomB, toEdge: edgeB });
+
+      edgeLinks[roomB] = edgeLinks[roomB] || [];
+      edgeLinks[roomB].push({ edge: edgeB, toRoom: roomA, toEdge: edgeA });
+    }
+  }
+
+  // Calculate spawn position when entering from an edge (always center of edge)
+  function getSpawnFromEdge(
+    toEdge: Edge,
+    toWidth: number,
+    toHeight: number
+  ): [number, number] {
+    const spawnOffset = 2; // Spawn 2 tiles inward from edge
+
+    switch (toEdge) {
+      case 'north':
+        return [Math.floor(toWidth / 2), spawnOffset];
+      case 'south':
+        return [Math.floor(toWidth / 2), toHeight - 1 - spawnOffset];
+      case 'west':
+        return [spawnOffset, Math.floor(toHeight / 2)];
+      case 'east':
+        return [toWidth - 1 - spawnOffset, Math.floor(toHeight / 2)];
+    }
+  }
+
+  // Check if player has crossed outside the room boundary
+  function checkEdgeCrossing(
+    playerTileX: number,
+    playerTileY: number,
+    width: number,
+    height: number
+  ): { edge: Edge; relativePos: number } | null {
+    if (playerTileX < 0) return { edge: 'west', relativePos: Math.max(0, Math.min(1, playerTileY / height)) };
+    if (playerTileX >= width) return { edge: 'east', relativePos: Math.max(0, Math.min(1, playerTileY / height)) };
+    if (playerTileY < 0) return { edge: 'north', relativePos: Math.max(0, Math.min(1, playerTileX / width)) };
+    if (playerTileY >= height) return { edge: 'south', relativePos: Math.max(0, Math.min(1, playerTileX / width)) };
+    return null;
+  }
+
+  // Process connections immediately (before init, so rooms are ready)
+  processConnections();
+  processEdges();
+
+  const doorwaySize = config.doorwaySize ?? 4;
+  const defaultWallTile = config.defaultWallTile ?? 6;
+
+  // Build walls and doorways for a room based on edge connections
+  function buildEdgeWalls(roomId: string, map: TileMap) {
+    const def = config.rooms[roomId];
+    if (!def) return;
+
+    const w = def.width;
+    const h = def.height;
+    const wallTile = def.wallTile ?? defaultWallTile;
+    const roomEdges = edgeLinks[roomId] || [];
+
+    // Check which edges have connections
+    const hasNorth = roomEdges.some(l => l.edge === 'north');
+    const hasSouth = roomEdges.some(l => l.edge === 'south');
+    const hasWest = roomEdges.some(l => l.edge === 'west');
+    const hasEast = roomEdges.some(l => l.edge === 'east');
+
+    // North wall
+    const northDoorStart = Math.floor(w / 2) - Math.floor(doorwaySize / 2);
+    for (let x = 0; x < w; x++) {
+      const inDoorway = hasNorth && x >= northDoorStart && x < northDoorStart + doorwaySize;
+      if (!inDoorway) {
+        map.set(x, 0, wallTile);
+        map.setCollision(x, 0, true);
+      }
+    }
+
+    // South wall
+    const southDoorStart = Math.floor(w / 2) - Math.floor(doorwaySize / 2);
+    for (let x = 0; x < w; x++) {
+      const inDoorway = hasSouth && x >= southDoorStart && x < southDoorStart + doorwaySize;
+      if (!inDoorway) {
+        map.set(x, h - 1, wallTile);
+        map.setCollision(x, h - 1, true);
+      }
+    }
+
+    // West wall
+    const westDoorStart = Math.floor(h / 2) - Math.floor(doorwaySize / 2);
+    for (let y = 0; y < h; y++) {
+      const inDoorway = hasWest && y >= westDoorStart && y < westDoorStart + doorwaySize;
+      if (!inDoorway) {
+        map.set(0, y, wallTile);
+        map.setCollision(0, y, true);
+      }
+    }
+
+    // East wall
+    const eastDoorStart = Math.floor(h / 2) - Math.floor(doorwaySize / 2);
+    for (let y = 0; y < h; y++) {
+      const inDoorway = hasEast && y >= eastDoorStart && y < eastDoorStart + doorwaySize;
+      if (!inDoorway) {
+        map.set(w - 1, y, wallTile);
+        map.setCollision(w - 1, y, true);
+      }
+    }
+  }
 
   function _load(roomId: string, spawnX?: number, spawnY?: number) {
     const def = config.rooms[roomId];
@@ -177,6 +459,11 @@ export function rooms(config: RoomConfig): RoomAddon {
     // Build terrain
     if (def.build) {
       def.build(currentMap, game);
+    }
+
+    // Auto-generate walls and doorways if using edge connections
+    if (config.edges && config.edges.length > 0) {
+      buildEdgeWalls(roomId, currentMap);
     }
 
     // Spawn entities
@@ -263,11 +550,12 @@ export function rooms(config: RoomConfig): RoomAddon {
 
     init(g: Glyft) {
       game = g;
+      validateExits();
     },
 
     postPhysics(dt: number) {
       // Exit checking
-      if (!playerSprite || !currentDef?.exits) return;
+      if (!playerSprite || !currentRoom || !currentDef) return;
 
       if (exitCooldown > 0) {
         exitCooldown -= dt;
@@ -278,11 +566,41 @@ export function rooms(config: RoomConfig): RoomAddon {
       const playerTileX = Math.floor(playerSprite.x / tileSize);
       const playerTileY = Math.floor(playerSprite.y / tileSize);
 
-      for (const exit of currentDef.exits) {
-        const radius = exit.radius ?? 2;
-        if (Math.abs(playerTileX - exit.x) < radius && Math.abs(playerTileY - exit.y) < radius) {
-          _load(exit.to, exit.spawnX, exit.spawnY);
-          return;
+      // Check edge-based exits first
+      const roomEdges = edgeLinks[currentRoom];
+      if (roomEdges) {
+        const crossing = checkEdgeCrossing(
+          playerTileX,
+          playerTileY,
+          currentDef.width,
+          currentDef.height
+        );
+
+        if (crossing) {
+          const link = roomEdges.find(l => l.edge === crossing.edge);
+          if (link) {
+            const targetDef = config.rooms[link.toRoom];
+            if (targetDef) {
+              const [spawnX, spawnY] = getSpawnFromEdge(
+                link.toEdge,
+                targetDef.width,
+                targetDef.height
+              );
+              _load(link.toRoom, spawnX, spawnY);
+              return;
+            }
+          }
+        }
+      }
+
+      // Check tile-based exits
+      if (currentDef.exits) {
+        for (const exit of currentDef.exits) {
+          const radius = exit.radius ?? 2;
+          if (Math.abs(playerTileX - exit.x) < radius && Math.abs(playerTileY - exit.y) < radius) {
+            _load(exit.to, exit.spawnX, exit.spawnY);
+            return;
+          }
         }
       }
     },

@@ -149,21 +149,44 @@ const game = new Glyft(canvas, config);
 const atlas = game.createTestAtlas('test', 16, 16);
 
 // =============================================================================
+// Room Connections — bidirectional exits defined once
+// =============================================================================
+
+const CONNECTIONS = [
+  { rooms: ['village', 'forest'] as [string, string], exits: [[23, 9], [0, 9]] as [[number, number], [number, number]] },
+  { rooms: ['forest', 'dungeon'] as [string, string], exits: [[31, 12], [0, 6]] as [[number, number], [number, number]] },
+];
+
+// Build exit lookup from connections for terrain generation
+function getExitsForRoom(roomId: string): Array<{ x: number; y: number }> {
+  const exits: Array<{ x: number; y: number }> = [];
+  for (const conn of CONNECTIONS) {
+    const idx = conn.rooms.indexOf(roomId);
+    if (idx !== -1) {
+      const [x, y] = conn.exits[idx];
+      exits.push({ x, y });
+    }
+  }
+  return exits;
+}
+
+// =============================================================================
 // Terrain Generation (room build callbacks)
 // =============================================================================
 
-function isNearSpecialLocation(x: number, y: number, roomData: typeof ROOM_DATA[string]): boolean {
-  for (const exit of roomData.exits) {
+function isNearSpecialLocation(x: number, y: number, roomId: string, spawns: typeof ROOM_DATA[string]['spawns']): boolean {
+  for (const exit of getExitsForRoom(roomId)) {
     if (distance(x, y, exit.x, exit.y) < 3) return true;
   }
-  for (const s of roomData.spawns) {
+  for (const s of spawns) {
     if (distance(x, y, s.x, s.y) < 3) return true;
   }
   return false;
 }
 
 function buildRoom(map: TileMap, roomId: string, roomData: typeof ROOM_DATA[string]) {
-  const { width, height } = roomData;
+  const { width, height, spawns } = roomData;
+  const exits = getExitsForRoom(roomId);
 
   // Floor
   const floorTile = roomId === 'dungeon' ? 5 : roomId === 'forest' ? 3 : 1;
@@ -181,7 +204,7 @@ function buildRoom(map: TileMap, roomId: string, roomData: typeof ROOM_DATA[stri
   }
 
   // Open exits
-  for (const exit of roomData.exits) {
+  for (const exit of exits) {
     map.set(exit.x, exit.y, floorTile);
     map.setCollision(exit.x, exit.y, false);
     map.set(clamp(exit.x - 1, 0, width - 1), exit.y, floorTile);
@@ -193,7 +216,7 @@ function buildRoom(map: TileMap, roomId: string, roomData: typeof ROOM_DATA[stri
     for (let i = 0; i < 15; i++) {
       const x = 2 + Math.floor(Math.random() * (width - 4));
       const y = 2 + Math.floor(Math.random() * (height - 4));
-      if (!isNearSpecialLocation(x, y, roomData)) {
+      if (!isNearSpecialLocation(x, y, roomId, spawns)) {
         map.set(x, y, 13);
         map.setCollision(x, y, true);
       }
@@ -201,7 +224,7 @@ function buildRoom(map: TileMap, roomId: string, roomData: typeof ROOM_DATA[stri
   } else if (roomId === 'dungeon') {
     for (let x = 4; x < width - 4; x += 4) {
       for (let y = 4; y < height - 4; y += 4) {
-        if (!isNearSpecialLocation(x, y, roomData)) {
+        if (!isNearSpecialLocation(x, y, roomId, spawns)) {
           map.set(x, y, 7);
           map.setCollision(x, y, true);
         }
@@ -217,9 +240,6 @@ function buildRoom(map: TileMap, roomId: string, roomData: typeof ROOM_DATA[stri
 const ROOM_DATA = {
   village: {
     width: 24, height: 18,
-    exits: [
-      { x: 23, y: 9, to: 'forest', spawnX: 1, spawnY: 9 },
-    ],
     spawns: [
       // NPCs
       { type: 'player', x: 5, y: 5, tags: ['npc', 'friendly'], dialogue: 'elder',
@@ -246,10 +266,6 @@ const ROOM_DATA = {
   },
   forest: {
     width: 32, height: 24,
-    exits: [
-      { x: 0, y: 9, to: 'village', spawnX: 22, spawnY: 9 },
-      { x: 31, y: 12, to: 'dungeon', spawnX: 1, spawnY: 6 },
-    ],
     spawns: [
       // Enemies
       { type: 'player', x: 10, y: 10, tags: ['enemy', 'hostile'], ai: 'chaser',
@@ -282,9 +298,6 @@ const ROOM_DATA = {
   },
   dungeon: {
     width: 20, height: 16,
-    exits: [
-      { x: 0, y: 6, to: 'forest', spawnX: 30, spawnY: 12 },
-    ],
     spawns: [
       // Enemies
       { type: 'player', x: 8, y: 6, tags: ['enemy', 'hostile'], ai: 'chaser',
@@ -390,7 +403,6 @@ game.use(rooms({
       spawn: [12, 9],
       build: (map) => buildRoom(map, 'village', ROOM_DATA.village),
       spawns: ROOM_DATA.village.spawns,
-      exits: ROOM_DATA.village.exits,
       onEnter: () => console.log('Entered: Village'),
     },
     forest: {
@@ -400,7 +412,6 @@ game.use(rooms({
       music: 'dungeon',
       build: (map) => buildRoom(map, 'forest', ROOM_DATA.forest),
       spawns: ROOM_DATA.forest.spawns,
-      exits: ROOM_DATA.forest.exits,
       onEnter: () => console.log('Entered: Dark Forest'),
     },
     dungeon: {
@@ -410,10 +421,10 @@ game.use(rooms({
       music: 'battle',
       build: (map) => buildRoom(map, 'dungeon', ROOM_DATA.dungeon),
       spawns: ROOM_DATA.dungeon.spawns,
-      exits: ROOM_DATA.dungeon.exits,
       onEnter: () => console.log('Entered: Ancient Dungeon'),
     },
   },
+  connections: CONNECTIONS,
 }));
 
 // Dialogue — NPC conversations with DOM callbacks
