@@ -188,6 +188,31 @@ function getLevelFromXp(xp: number, thresholds: number[]): { level: number; xpIn
   };
 }
 
+/** Word-wrap text to fit within a given pixel width */
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const metrics = ctx.measureText(testLine);
+
+    if (metrics.width > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines.length > 0 ? lines : [''];
+}
+
 /** Draw text with outline */
 function outlinedText(
   ctx: CanvasRenderingContext2D,
@@ -390,8 +415,16 @@ export function hud(config: HudConfig = {}): HudAddon {
     const boxPad = 6;
     const boxMargin = 8;
     const boxW = vw - boxMargin * 2;
+    const textMaxWidth = boxW - boxPad * 2;
+
+    // Set font before measuring text for wrapping
+    ctx.font = `${fontSize}px ${font}`;
+
+    // Word-wrap the dialogue text
+    const wrappedLines = wrapText(ctx, dlgText, textMaxWidth);
+
     const speakerH = dlgSpeaker ? lineHeight : 0;
-    const textH = lineHeight;
+    const textH = lineHeight * wrappedLines.length;
     const promptH = lineHeight;
     const boxH = boxPad * 2 + speakerH + textH + promptH;
     const boxX = boxMargin;
@@ -407,7 +440,6 @@ export function hud(config: HudConfig = {}): HudAddon {
     ctx.lineJoin = 'miter';
     ctx.strokeRect(boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1);
 
-    ctx.font = `${fontSize}px ${font}`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
     let cursorY = boxY + boxPad;
@@ -420,9 +452,11 @@ export function hud(config: HudConfig = {}): HudAddon {
       ctx.font = `${fontSize}px ${font}`;
     }
 
-    // Dialogue text
-    outlinedText(ctx, dlgText, boxX + boxPad, cursorY, dlgTextColor, outlineColorStr, outlineWidth);
-    cursorY += lineHeight;
+    // Dialogue text (wrapped)
+    for (const line of wrappedLines) {
+      outlinedText(ctx, line, boxX + boxPad, cursorY, dlgTextColor, outlineColorStr, outlineWidth);
+      cursorY += lineHeight;
+    }
 
     // Prompt
     const promptText = `[SPACE] ${dlgLineIndex + 1}/${dlgLineCount}`;

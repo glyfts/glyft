@@ -55,7 +55,8 @@ const NOTE_NAMES: Record<string, number> = {
  * Parse a note name (e.g. 'C4', 'D#4', 'Eb3') to frequency in Hz.
  * Returns the number directly if given a number.
  */
-function noteToFreq(note: string | number): number {
+function noteToFreq(note: string | number | null): number {
+  if (note === null || note === undefined) return 0; // rest/silence
   if (typeof note === 'number') return note;
 
   // Parse: note letter + optional # or b + octave number
@@ -355,6 +356,10 @@ export function createMusicManager(): MusicManager {
         const { freq, dur: noteDur } = parsed[i];
         const noteStart = startTime + offset;
         offset += noteDur;
+
+        // Skip rests (freq = 0)
+        if (freq === 0) continue;
+
         // Fade envelope: attack 10%, sustain 60%, release 30%
         const attack = noteDur * 0.1;
         const sustain = noteDur * 0.6;

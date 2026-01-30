@@ -13,11 +13,21 @@ export interface SoundManager {
   /** Register named sound effect definitions */
   defineSfx(defs: Record<string, SfxDef>): void;
   /** Manually play a sound */
-  play(sound: string, options?: { volume?: number; pitch?: number; x?: number }): void;
+  play(sound: string, options?: { volume?: number | [number, number]; pitch?: number | [number, number]; x?: number }): void;
   /** Set master volume (0-1) */
   setVolume(volume: number): void;
   /** Preload sounds */
   preload(sounds: string[]): Promise<void>;
+}
+
+/** Resolve a value that may be a number or a [min, max] range */
+function resolveRange(value: number | [number, number] | undefined, defaultVal: number): number {
+  if (value === undefined) return defaultVal;
+  if (Array.isArray(value)) {
+    const [min, max] = value;
+    return min + Math.random() * (max - min);
+  }
+  return value;
 }
 
 interface LoadedSound {
@@ -299,15 +309,15 @@ export function createSoundManager(viewportWidth: number): SoundManager {
       // Try sfx definitions first (user-defined, then $presets, then builtins)
       const sfx = _resolveSfx(sound);
       if (sfx) {
-        playSfx(sfx, options?.volume ?? 1, options?.pitch ?? 1, options?.x);
+        playSfx(sfx, resolveRange(options?.volume, 1), resolveRange(options?.pitch, 1), options?.x);
         return;
       }
 
       // Try loaded audio buffer
       const cached = sounds.get(sound);
       if (cached) {
-        const vol = options?.volume ?? 1;
-        const pitch = options?.pitch ?? 1;
+        const vol = resolveRange(options?.volume, 1);
+        const pitch = resolveRange(options?.pitch, 1);
         const pan = options?.x !== undefined
           ? (options.x / viewportWidth) * 2 - 1
           : 0;
@@ -318,8 +328,8 @@ export function createSoundManager(viewportWidth: number): SoundManager {
       // Try to load as audio file
       loadSound(sound)
         .then((buffer) => {
-          const vol = options?.volume ?? 1;
-          const pitch = options?.pitch ?? 1;
+          const vol = resolveRange(options?.volume, 1);
+          const pitch = resolveRange(options?.pitch, 1);
           const pan = options?.x !== undefined
             ? (options.x / viewportWidth) * 2 - 1
             : 0;

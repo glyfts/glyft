@@ -233,7 +233,7 @@ export class GlyftEngine {
 
     // Initialize systems
     this._camera = new CameraImpl(config.settings.viewport, this._sprites);
-    this._input = new InputImpl(canvas);
+    this._input = new InputImpl(canvas, config.settings.viewport[0], config.settings.viewport[1]);
     this._soundManager = createSoundManager(config.settings.viewport[0]);
     this._musicManager = createMusicManager();
     this._fontAtlas = generateFontAtlas(this.gl);
@@ -1860,22 +1860,28 @@ export class GlyftEngine {
         if (sprite.tags.includes(rule.tagB)) this._magnetizeGroupB.push(sprite);
       }
 
-      // Move B toward closest A when in range
+      // Move B toward closest A when in range (center-to-center)
       // (B = second pattern element = collision target, consistent with action semantics)
       for (const b of this._magnetizeGroupB) {
+        const bCenterX = b.x + b.frameW / 2;
+        const bCenterY = b.y + b.frameH / 2;
         let bestDist = rule.range;
         let bestA: InternalSprite | null = null;
 
         for (const a of this._magnetizeGroupA) {
-          const dx = a.x - b.x;
-          const dy = a.y - b.y;
+          const aCenterX = a.x + a.frameW / 2;
+          const aCenterY = a.y + a.frameH / 2;
+          const dx = aCenterX - bCenterX;
+          const dy = aCenterY - bCenterY;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < bestDist) { bestDist = dist; bestA = a; }
         }
 
         if (bestA && bestDist > 1) {
-          const dx = bestA.x - b.x;
-          const dy = bestA.y - b.y;
+          const aCenterX = bestA.x + bestA.frameW / 2;
+          const aCenterY = bestA.y + bestA.frameH / 2;
+          const dx = aCenterX - bCenterX;
+          const dy = aCenterY - bCenterY;
           const move = Math.min(rule.speed * dt, bestDist);
           b.x += (dx / bestDist) * move;
           b.y += (dy / bestDist) * move;

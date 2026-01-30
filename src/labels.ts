@@ -6,7 +6,7 @@
  * when label text changes, not per frame.
  *
  * Slot allocator manages up to 128 labeled sprites. Each label supports
- * up to 16 characters plus an optional icon. One draw call for all visible labels.
+ * up to 22 characters plus an optional icon. One draw call for all visible labels.
  *
  * Position texture (128×2) is shared with the HP bar system:
  * - Row 0: (anchorX, anchorY, alpha, yShift)
@@ -19,7 +19,7 @@ import { packColorF32, type FontAtlas } from './floattext';
 
 // Pool limits
 const MAX_LABELS = 128;
-const MAX_LABEL_CHARS = 18; // 16 text + 1 icon + padding
+const MAX_LABEL_CHARS = 24; // 22 text + 1 icon + padding
 const MAX_CHARS = MAX_LABELS * MAX_LABEL_CHARS;
 const FLOATS_PER_CHAR = 12;
 const BYTES_PER_CHAR = FLOATS_PER_CHAR * 4;
@@ -162,7 +162,7 @@ export function createLabelManager(gl: WebGL2RenderingContext, fontAtlas: FontAt
     setLabel(slot: number, text: string, color: number, icon?: string, iconColor?: number): void {
       if (slot < 0 || slot >= MAX_LABELS || !slots[slot].active) return;
 
-      const str = text.slice(0, 16); // Max 16 text characters
+      const str = text.slice(0, 22); // Max 22 text characters (buffer has room for 22 + icon + padding = 24)
       const colorF = packColorF32(color);
       const scale = 0.75; // Labels slightly smaller than float text
 
