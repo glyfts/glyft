@@ -74,6 +74,9 @@ export type {
   ParticleEmitterDef,
 } from './types';
 
+// Re-export arc effect types
+export type { ArcEffectDef } from './arcs';
+
 // Re-export from network for convenience
 export type { NetworkAdapter as INetworkAdapter } from './network';
 

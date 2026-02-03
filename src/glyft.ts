@@ -41,6 +41,7 @@ import { createFloatTextManager, generateFontAtlas, packColorF32, type FloatText
 import { createLabelManager, type LabelManager, type LabelSpriteData } from './labels';
 import { createHpBarManager, type HpBarManager } from './hpbars';
 import { createParticleManager, type ParticleManager } from './particles';
+import { createArcEffectManager, type ArcEffectManager, type ArcEffectDef } from './arcs';
 import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
 
 // -----------------------------------------------------------------------------
@@ -171,6 +172,7 @@ export class GlyftEngine {
   private _labelManager!: LabelManager;
   private _hpBarManager!: HpBarManager;
   private _particleManager!: ParticleManager;
+  private _arcManager!: ArcEffectManager;
 
   // Overlay (lazy init — only created when game.overlay is accessed)
   private _overlayCanvas: HTMLCanvasElement | null = null;
@@ -244,6 +246,7 @@ export class GlyftEngine {
     this._labelManager = createLabelManager(this.gl, this._fontAtlas);
     this._hpBarManager = createHpBarManager(this.gl, this._labelManager.getPositionTexture());
     this._particleManager = createParticleManager(this.gl);
+    this._arcManager = createArcEffectManager(this.gl);
 
     // Pointer event dispatch (click → sprite callbacks + game-level event)
     canvas.addEventListener('pointerdown', (e) => {
@@ -1460,6 +1463,17 @@ export class GlyftEngine {
     };
   }
 
+  /** Arc effect system: define effects and emit melee swings */
+  get arcs() {
+    const self = this;
+    return {
+      define(name: string, def: ArcEffectDef) { self._arcManager.define(name, def); },
+      emit(name: string, x: number, y: number, angle: number, arcDegrees: number, range: number) {
+        self._arcManager.emit(name, x, y, angle, arcDegrees, range, self._time);
+      },
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Collision
   // ---------------------------------------------------------------------------
@@ -1723,6 +1737,9 @@ export class GlyftEngine {
 
     // Update particles (expire dead particles)
     this._particleManager.update(this._time);
+
+    // Update arc effects (expire dead arcs)
+    this._arcManager.update(this._time);
 
     // Clear per-frame input state (justPressed/justReleased)
     this._input.update();
@@ -2231,6 +2248,9 @@ export class GlyftEngine {
 
     // Render particles (after HP bars, before float text)
     this._particleManager.render(projection, this._time, this._camera.x, this._camera.y);
+
+    // Render arc effects (melee swings, after particles)
+    this._arcManager.render(projection, this._time, this._camera.x, this._camera.y);
 
     // Render floating text (on top of everything except overlay)
     this._floatTextManager.render(projection, this._time, this._camera.x, this._camera.y);
