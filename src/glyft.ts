@@ -1214,6 +1214,27 @@ export class GlyftEngine {
         return dirs[sprite.lastDirection] ?? 'down';
       },
 
+      setFacing(direction: 'down' | 'right' | 'up' | 'left' | number) {
+        if (typeof direction === 'number') {
+          // Radians - convert to 4-direction index
+          // 0 = right, PI/2 = down, PI = left, -PI/2 = up
+          const angle = direction;
+          const normalized = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+          if (normalized < Math.PI * 0.25 || normalized >= Math.PI * 1.75) {
+            sprite.lastDirection = 1; // right
+          } else if (normalized < Math.PI * 0.75) {
+            sprite.lastDirection = 0; // down
+          } else if (normalized < Math.PI * 1.25) {
+            sprite.lastDirection = 3; // left
+          } else {
+            sprite.lastDirection = 2; // up
+          }
+        } else {
+          const dirMap = { down: 0, right: 1, up: 2, left: 3 };
+          sprite.lastDirection = dirMap[direction] ?? 0;
+        }
+      },
+
       defineAnimation(name: string, def: AnimationDef) {
         sprite.animations.set(name, def);
       },

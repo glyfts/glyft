@@ -603,6 +603,13 @@ export interface Sprite {
   readonly facing: Direction;
 
   /**
+   * Set the sprite's facing direction explicitly.
+   * Accepts a direction string ('down', 'right', 'up', 'left') or angle in radians.
+   * Use this when you need to face a target without moving (e.g., attacking while stationary).
+   */
+  setFacing(direction: Direction | number): void;
+
+  /**
    * Custom data storage for game-specific properties.
    * @example sprite.data.inventory = []; sprite.data.dialogueId = 'npc_01';
    */
