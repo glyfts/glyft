@@ -524,6 +524,12 @@ export interface Sprite {
    */
   tint: number;
 
+  /** Number of idle animation frames (default: 1) */
+  idleFrames: number;
+
+  /** Number of walk animation frames (default: 4) */
+  walkFrames: number;
+
   /** Flip sprite horizontally */
   flipX: boolean;
 
