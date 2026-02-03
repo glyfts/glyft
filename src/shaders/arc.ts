@@ -1,25 +1,25 @@
 /**
  * Arc effect shaders for GPU-driven melee swing visuals.
  *
- * Renders arc/pie-slice shapes for melee weapon swings.
+ * Renders arc/pie-slice shapes for melee weapon swings with sweeping animation.
  * Single instanced draw call for all active arcs.
  *
  * Per-instance data (12 floats / 48 bytes):
  * - a_arcPos (vec4): centerX, centerY, angle (radians), arcRadians
- * - a_arcDyn (vec4): range, birthTime, duration, (unused)
- * - a_arcVis (vec4): color (packed), colorEnd (packed), thickness, (unused)
+ * - a_arcDyn (vec4): range, birthTime, duration, sweepDir
+ * - a_arcVis (vec4): color (packed), colorEnd (packed), (unused), (unused)
  */
 
 export const arcVertexShader = /*glsl*/ `#version 300 es
 precision highp float;
 precision highp int;
 
-// Per-vertex (arc geometry - fan of triangles)
-layout(location = 0) in vec2 a_position;  // Pre-computed arc vertex, normalized 0-1 range
+// Per-vertex (arc geometry - truncated arc quads)
+layout(location = 0) in vec2 a_position;  // (dist, angleT) where dist is 0.15-1, angleT is 0-1
 
 // Per-instance
 layout(location = 1) in vec4 a_arcPos;    // centerX, centerY, angle (radians), arcRadians
-layout(location = 2) in vec4 a_arcDyn;    // range, birthTime, duration, (unused)
+layout(location = 2) in vec4 a_arcDyn;    // range, birthTime, duration, sweepDir
 layout(location = 3) in vec4 a_arcVis;    // colorStart (packed), colorEnd (packed), (unused), (unused)
 
 uniform mat3 u_projection;
@@ -27,7 +27,7 @@ uniform float u_time;
 uniform vec2 u_cameraPos;
 
 out vec4 v_color;
-out float v_dist;  // Distance from center for gradient
+out float v_dist;
 
 vec3 unpackColor(float packed) {
   uint p = floatBitsToUint(packed);
@@ -59,28 +59,62 @@ void main() {
   float arcRadians = a_arcPos.w;  // Total arc width in radians
   float range = a_arcDyn.x;       // Arc radius in pixels
 
-  // a_position.x = 0 at center, 1 at edge
-  // a_position.y = angle offset from -0.5 to +0.5
-  float dist = a_position.x;
-  float angleOffset = (a_position.y - 0.5) * arcRadians;
-  float vertAngle = angle + angleOffset;
+  // Vertex position within arc
+  float dist = a_position.x;      // 0.15 at inner edge, 1.0 at outer edge
+  float angleT = a_position.y;    // 0-1 across the arc width
+
+  // ===== SWEEPING ANIMATION =====
+  // Sweep progresses from 0 to 1 over ~60% of duration, then trail fades
+  float sweepSpeed = 1.6;  // Complete sweep in 60% of duration
+  float sweepProgress = min(t * sweepSpeed, 1.0);
+
+  // Calculate how far this vertex is behind the sweep front
+  float distBehindSweep = sweepProgress - angleT;
+
+  // Vertices ahead of sweep are invisible
+  if (angleT > sweepProgress + 0.08) {  // Small buffer for anti-aliasing
+    gl_Position = vec4(0.0);
+    v_color = vec4(0.0);
+    v_dist = 0.0;
+    return;
+  }
 
   // Calculate world position
+  float angleOffset = (angleT - 0.5) * arcRadians;
+  float vertAngle = angle + angleOffset;
   vec2 worldPos = center + vec2(cos(vertAngle), sin(vertAngle)) * dist * range;
 
-  // Color interpolation
+  // ===== COLOR ANIMATION =====
+  // Color transitions from start to end as the sweep progresses
   vec3 colStart = unpackColor(a_arcVis.x);
   vec3 colEnd = unpackColor(a_arcVis.y);
-  vec3 color = mix(colStart, colEnd, t);
 
-  // Alpha: start strong, fade out over lifetime
-  // Fade from inner edge to outer edge for a "sweep" effect
-  // dist ranges from ~0.15 (inner) to 1.0 (outer)
+  // Leading edge gets the "end" color, trail gets interpolated
+  float colorT = angleT;  // 0 at start of sweep, 1 at end
+  vec3 color = mix(colStart, colEnd, colorT);
+
+  // ===== ALPHA / FADE =====
+  // Leading edge is bright, trail fades out
+  float trailFade = 1.0;
+  if (distBehindSweep > 0.0) {
+    // Trail fades based on how far behind the sweep front
+    trailFade = 1.0 - smoothstep(0.0, 0.5, distBehindSweep);
+  }
+
+  // Edge fade (inner to outer)
   float innerRadius = 0.15;
-  float normalizedDist = (dist - innerRadius) / (1.0 - innerRadius);  // 0 at inner, 1 at outer
-  float edgeFade = 1.0 - normalizedDist * 0.5;  // Fade slightly toward outer edge
-  float timeFade = 1.0 - t * t;  // Quadratic fade
-  float alpha = edgeFade * timeFade * 0.9;
+  float normalizedDist = (dist - innerRadius) / (1.0 - innerRadius);
+  float edgeFade = 1.0 - normalizedDist * 0.3;
+
+  // Leading edge glow - vertices near the sweep front are brighter
+  float leadingEdgeGlow = 1.0 - smoothstep(0.0, 0.15, abs(angleT - sweepProgress));
+
+  // Final alpha
+  float alpha = edgeFade * trailFade * 0.9 + leadingEdgeGlow * 0.3;
+
+  // Overall fade out in the last 30% of duration
+  float endFade = 1.0 - smoothstep(0.7, 1.0, t);
+  alpha *= endFade;
 
   v_color = vec4(color, alpha);
   v_dist = dist;
