@@ -18,10 +18,11 @@ const MAX_ARCS = 64;
 const FLOATS_PER_ARC = 12;
 const BYTES_PER_ARC = FLOATS_PER_ARC * 4;
 
-// Arc geometry: fan of triangles from center
+// Arc geometry: quads forming a truncated arc (no pointy center)
 // More segments = smoother arc
 const ARC_SEGMENTS = 12;
-const VERTS_PER_ARC = ARC_SEGMENTS * 3;  // 3 verts per triangle
+const VERTS_PER_ARC = ARC_SEGMENTS * 6;  // 2 triangles per quad segment
+const INNER_RADIUS = 0.15;  // Inner radius as fraction of range (cuts off pointy tip)
 
 export interface ArcEffectDef {
   /** Duration in seconds (default: 0.2) */
@@ -51,8 +52,8 @@ export interface ArcEffectManager {
 
 /**
  * Generate arc geometry vertices.
- * Creates a fan of triangles from center to edge.
- * Each vertex has (dist, angleT) where dist is 0-1 and angleT is 0-1.
+ * Creates a truncated arc (no pointy center) using quads from inner to outer edge.
+ * Each vertex has (dist, angleT) where dist is INNER_RADIUS-1 and angleT is 0-1.
  */
 function generateArcGeometry(): Float32Array {
   const verts = new Float32Array(VERTS_PER_ARC * 2);
@@ -62,18 +63,26 @@ function generateArcGeometry(): Float32Array {
     const t0 = i / ARC_SEGMENTS;
     const t1 = (i + 1) / ARC_SEGMENTS;
 
-    // Triangle: center, edge0, edge1
-    // Center vertex (dist=0, angleT=0.5 - doesn't matter for center)
-    verts[idx++] = 0;    // dist
-    verts[idx++] = 0.5;  // angleT (center)
+    // Quad: inner0, outer0, outer1, inner0, outer1, inner1
+    // Triangle 1: inner0 -> outer0 -> outer1
+    verts[idx++] = INNER_RADIUS;  // inner dist
+    verts[idx++] = t0;            // angleT
 
-    // Edge vertex 0
-    verts[idx++] = 1;    // dist (at edge)
+    verts[idx++] = 1;    // outer dist
     verts[idx++] = t0;   // angleT
 
-    // Edge vertex 1
-    verts[idx++] = 1;    // dist (at edge)
+    verts[idx++] = 1;    // outer dist
     verts[idx++] = t1;   // angleT
+
+    // Triangle 2: inner0 -> outer1 -> inner1
+    verts[idx++] = INNER_RADIUS;  // inner dist
+    verts[idx++] = t0;            // angleT
+
+    verts[idx++] = 1;    // outer dist
+    verts[idx++] = t1;   // angleT
+
+    verts[idx++] = INNER_RADIUS;  // inner dist
+    verts[idx++] = t1;            // angleT
   }
 
   return verts;

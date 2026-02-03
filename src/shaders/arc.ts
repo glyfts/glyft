@@ -74,10 +74,13 @@ void main() {
   vec3 color = mix(colStart, colEnd, t);
 
   // Alpha: start strong, fade out over lifetime
-  // Also fade from center to edge for a "sweep" effect
-  float edgeFade = 1.0 - pow(dist, 0.5);  // Stronger at center
+  // Fade from inner edge to outer edge for a "sweep" effect
+  // dist ranges from ~0.15 (inner) to 1.0 (outer)
+  float innerRadius = 0.15;
+  float normalizedDist = (dist - innerRadius) / (1.0 - innerRadius);  // 0 at inner, 1 at outer
+  float edgeFade = 1.0 - normalizedDist * 0.5;  // Fade slightly toward outer edge
   float timeFade = 1.0 - t * t;  // Quadratic fade
-  float alpha = edgeFade * timeFade * 0.8;
+  float alpha = edgeFade * timeFade * 0.9;
 
   v_color = vec4(color, alpha);
   v_dist = dist;
