@@ -23,6 +23,7 @@ layout(location = 1) in vec4 a_posVel;    // x, y, vx, vy
 layout(location = 2) in vec4 a_frame;     // u, v, w, h (base frame in atlas)
 layout(location = 3) in vec4 a_props;     // rotation, scale, alpha, tint (packed)
 layout(location = 4) in vec4 a_anim;      // idleFrames, walkFrames, fps, flags
+layout(location = 5) in vec4 a_glow;      // intensity, color (packed), radius, unused
 
 // Uniforms
 uniform mat3 u_projection;
@@ -37,6 +38,8 @@ out float v_alpha;
 out vec3 v_tint;
 out vec2 v_localUV;
 out float v_hasShadow;
+out float v_glowIntensity;
+out vec3 v_glowColor;
 
 // Unpack tint from float (RGB packed into 32 bits)
 vec3 unpackTint(float packed) {
@@ -82,6 +85,11 @@ void main() {
   float scale = a_props.y;
   v_alpha = a_props.z;
   v_tint = unpackTint(a_props.w);
+
+  // Glow parameters
+  v_glowIntensity = a_glow.x;
+  v_glowColor = unpackTint(a_glow.y);
+  float glowRadius = a_glow.z;
 
   // Animation parameters
   int idleFrames = int(a_anim.x);
@@ -148,7 +156,44 @@ void main() {
   v_localUV = a_position;
   v_hasShadow = hasShadow ? 1.0 : 0.0;
 
-  if (u_shadowPass == 1) {
+  if (u_shadowPass == 2) {
+    // Glow pass: expanded sprite with glow color, rendered with additive blending
+    if (v_glowIntensity <= 0.0) {
+      v_alpha = 0.0;
+      gl_Position = vec4(0.0);
+      return;
+    }
+
+    // Expand the quad by glowRadius
+    float expandedScale = scale * glowRadius;
+    vec2 localPos = a_position * frameSize * expandedScale;
+    vec2 center = frameSize * expandedScale * 0.5;
+    vec2 centered = localPos - center;
+    float c = cos(rotation);
+    float s = sin(rotation);
+    vec2 rotatedPos = vec2(
+      centered.x * c - centered.y * s,
+      centered.x * s + centered.y * c
+    ) + center;
+
+    // Offset to center the expanded quad on the original sprite
+    vec2 expandOffset = frameSize * scale * 0.5 - frameSize * expandedScale * 0.5;
+
+    float bobOffset = 0.0;
+    if (bobAmplitude > 0.0) {
+      bobOffset = sin(u_time * bobSpeed * 6.28318) * bobAmplitude;
+    }
+
+    vec2 worldPos = pos + expandOffset + rotatedPos - u_cameraPos;
+    worldPos.y -= bobOffset;
+
+    // Remap UV for glow fade calculation (0,0 to 1,1 -> -0.5,-0.5 to 0.5,0.5)
+    v_localUV = a_position;
+    v_alpha = v_glowIntensity;
+
+    vec3 projected = u_projection * vec3(worldPos, 1.0);
+    gl_Position = vec4(projected.xy, 0.0, 1.0);
+  } else if (u_shadowPass == 1) {
     // Shadow pass: flat ellipse at sprite base, scales with bob height
     if (!hasShadow) {
       v_alpha = 0.0;
@@ -211,10 +256,34 @@ in float v_alpha;
 in vec3 v_tint;
 in vec2 v_localUV;
 in float v_hasShadow;
+in float v_glowIntensity;
+in vec3 v_glowColor;
 
 out vec4 fragColor;
 
 void main() {
+  // Glow pass: render soft radial glow
+  if (u_shadowPass == 2) {
+    if (v_glowIntensity <= 0.0) discard;
+
+    // Sample the texture to only glow where sprite has pixels
+    vec4 texColor = texture(u_atlas, v_texCoord);
+    if (texColor.a < 0.01) discard;
+
+    // Calculate distance from center for soft falloff
+    vec2 p = (v_localUV - 0.5) * 2.0;
+    float dist = length(p);
+
+    // Soft radial falloff
+    float glow = smoothstep(1.0, 0.0, dist) * v_glowIntensity * 0.6;
+
+    // Pulsing effect (optional, subtle)
+    // glow *= 0.8 + 0.2 * sin(u_time * 3.0);
+
+    fragColor = vec4(v_glowColor * glow, glow);
+    return;
+  }
+
   // Shadow pass: render dark ellipse
   if (u_shadowPass == 1) {
     if (v_hasShadow < 0.5) discard;

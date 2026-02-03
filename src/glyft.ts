@@ -69,6 +69,9 @@ interface InternalSprite {
   bob: number;
   bobSpeed: number;
   shadow: boolean;
+  glow: number;
+  glowColor: number | null;
+  glowRadius: number;
   atlas: InternalAtlas;
   exists: boolean;
   // Named animation registry
@@ -982,6 +985,9 @@ export class GlyftEngine {
       bob: 0,
       bobSpeed: 1.5,
       shadow: false,
+      glow: 0,
+      glowColor: null,
+      glowRadius: 1.5,
       atlas: internalAtlas,
       exists: true,
       animations: new Map(),
@@ -1090,6 +1096,12 @@ export class GlyftEngine {
       set bobSpeed(v: number) { sprite.bobSpeed = Math.min(25.5, Math.max(0, v)); },
       get shadow() { return sprite.shadow; },
       set shadow(v: boolean) { sprite.shadow = v; },
+      get glow() { return sprite.glow; },
+      set glow(v: number) { sprite.glow = Math.min(1, Math.max(0, v)); },
+      get glowColor() { return sprite.glowColor; },
+      set glowColor(v: number | null) { sprite.glowColor = v; },
+      get glowRadius() { return sprite.glowRadius; },
+      set glowRadius(v: number) { sprite.glowRadius = Math.max(1, v); },
       get label() { return sprite.labelText; },
       set label(v: string | null) {
         if (v === sprite.labelText) return;
@@ -2349,20 +2361,24 @@ export class GlyftEngine {
   private _tintF32 = new Float32Array(this._tintU32.buffer);
   private _flagsU32 = new Uint32Array(1);
   private _flagsF32 = new Float32Array(this._flagsU32.buffer);
+  private _glowColorU32 = new Uint32Array(1);
+  private _glowColorF32 = new Float32Array(this._glowColorU32.buffer);
 
   private _renderSpriteGroup(atlas: InternalAtlas, sprites: InternalSprite[]): void {
     const gl = this.gl;
 
     // Build instance data
-    // Per-instance: posVel(4) + frame(4) + props(4) + anim(4) = 16 floats = 64 bytes
-    const FLOATS_PER_INSTANCE = 16;
+    // Per-instance: posVel(4) + frame(4) + props(4) + anim(4) + glow(4) = 20 floats = 80 bytes
+    const FLOATS_PER_INSTANCE = 20;
     const instanceData = new Float32Array(sprites.length * FLOATS_PER_INSTANCE);
     let hasShadows = false;
+    let hasGlow = false;
 
     for (let i = 0; i < sprites.length; i++) {
       const sprite = sprites[i];
       const offset = i * FLOATS_PER_INSTANCE;
       if (sprite.shadow) hasShadows = true;
+      if (sprite.glow > 0) hasGlow = true;
 
       // Check for named animation override — CPU drives the frame
       const namedAnim = sprite.animOverride ? sprite.animations.get(sprite.animOverride) : null;
@@ -2438,6 +2454,15 @@ export class GlyftEngine {
       // Pack tint as uint32 bits into float (reuse buffer to avoid allocation)
       this._tintU32[0] = sprite.tint | 0xFF000000;
       instanceData[offset + 11] = this._tintF32[0];
+
+      // a_glow: intensity, color (packed), radius, unused
+      instanceData[offset + 16] = sprite.glow;
+      // Pack glow color (use tint if glowColor is null)
+      const glowColorValue = sprite.glowColor !== null ? sprite.glowColor : sprite.tint;
+      this._glowColorU32[0] = glowColorValue | 0xFF000000;
+      instanceData[offset + 17] = this._glowColorF32[0];
+      instanceData[offset + 18] = sprite.glowRadius;
+      instanceData[offset + 19] = 0; // unused
     }
 
     // Bind VAO and update instance buffer
@@ -2469,17 +2494,34 @@ export class GlyftEngine {
     gl.vertexAttribPointer(4, 4, gl.FLOAT, false, BYTES_PER_INSTANCE, 48);
     gl.vertexAttribDivisor(4, 1);
 
+    // a_glow (location 5)
+    gl.enableVertexAttribArray(5);
+    gl.vertexAttribPointer(5, 4, gl.FLOAT, false, BYTES_PER_INSTANCE, 64);
+    gl.vertexAttribDivisor(5, 1);
+
     // Bind atlas texture
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, atlas.texture);
     gl.uniform1i(this._spriteShader.uniforms.u_atlas, 0);
     gl.uniform2f(this._spriteShader.uniforms.u_atlasSize, atlas.width, atlas.height);
 
-    // Two-pass rendering: shadows first (behind sprites), then sprites with bob
+    // Three-pass rendering: glow first, then shadows, then sprites
+    // Glow pass: additive blending, expanded scaled sprites
+    if (hasGlow) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive blending
+      gl.uniform1i(this._spriteShader.uniforms.u_shadowPass, 2); // 2 = glow pass
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, sprites.length);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // Restore normal blending
+    }
+
+    // Shadow pass
     if (hasShadows) {
       gl.uniform1i(this._spriteShader.uniforms.u_shadowPass, 1);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, sprites.length);
     }
+
+    // Normal sprite pass
     gl.uniform1i(this._spriteShader.uniforms.u_shadowPass, 0);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, sprites.length);
 

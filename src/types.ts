@@ -539,6 +539,24 @@ export interface Sprite {
   /** Render a dark ellipse shadow at sprite base position. */
   shadow: boolean;
 
+  /**
+   * Glow intensity from 0 (off) to 1 (full).
+   * GPU-driven additive glow rendered behind the sprite.
+   */
+  glow: number;
+
+  /**
+   * Glow color as 0xRRGGBB hex. Defaults to sprite tint if not set.
+   * @example 0xFF0000 (red glow), 0x00FFFF (cyan glow)
+   */
+  glowColor: number | null;
+
+  /**
+   * Glow radius multiplier (default 1.5).
+   * Controls how far the glow extends beyond sprite bounds.
+   */
+  glowRadius: number;
+
   /** Text label displayed above sprite (null = no label). Max 16 characters. */
   label: string | null;
 
