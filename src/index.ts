@@ -77,6 +77,9 @@ export type {
 // Re-export arc effect types
 export type { ArcEffectDef } from './arcs';
 
+// Re-export ring effect types
+export type { RingEffectDef } from './rings';
+
 // Re-export from network for convenience
 export type { NetworkAdapter as INetworkAdapter } from './network';
 

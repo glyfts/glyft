@@ -42,6 +42,7 @@ import { createLabelManager, type LabelManager, type LabelSpriteData } from './l
 import { createHpBarManager, type HpBarManager } from './hpbars';
 import { createParticleManager, type ParticleManager } from './particles';
 import { createArcEffectManager, type ArcEffectManager, type ArcEffectDef } from './arcs';
+import { createRingEffectManager, type RingEffectManager, type RingEffectDef } from './rings';
 import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
 
 // -----------------------------------------------------------------------------
@@ -173,6 +174,7 @@ export class GlyftEngine {
   private _hpBarManager!: HpBarManager;
   private _particleManager!: ParticleManager;
   private _arcManager!: ArcEffectManager;
+  private _ringManager!: RingEffectManager;
 
   // Overlay (lazy init — only created when game.overlay is accessed)
   private _overlayCanvas: HTMLCanvasElement | null = null;
@@ -247,6 +249,7 @@ export class GlyftEngine {
     this._hpBarManager = createHpBarManager(this.gl, this._labelManager.getPositionTexture());
     this._particleManager = createParticleManager(this.gl);
     this._arcManager = createArcEffectManager(this.gl);
+    this._ringManager = createRingEffectManager(this.gl);
 
     // Pointer event dispatch (click → sprite callbacks + game-level event)
     canvas.addEventListener('pointerdown', (e) => {
@@ -1499,6 +1502,17 @@ export class GlyftEngine {
     };
   }
 
+  /** Ring/shockwave effect system: define effects and emit expanding rings */
+  get rings() {
+    const self = this;
+    return {
+      define(name: string, def: RingEffectDef) { self._ringManager.define(name, def); },
+      emit(name: string, x: number, y: number) {
+        self._ringManager.emit(name, x, y, self._time);
+      },
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Collision
   // ---------------------------------------------------------------------------
@@ -1765,6 +1779,9 @@ export class GlyftEngine {
 
     // Update arc effects (expire dead arcs)
     this._arcManager.update(this._time);
+
+    // Update ring effects (expire dead rings)
+    this._ringManager.update(this._time);
 
     // Clear per-frame input state (justPressed/justReleased)
     this._input.update();
@@ -2276,6 +2293,9 @@ export class GlyftEngine {
 
     // Render arc effects (melee swings, after particles)
     this._arcManager.render(projection, this._time, this._camera.x, this._camera.y);
+
+    // Render ring effects (shockwaves, after arcs)
+    this._ringManager.render(projection, this._time, this._camera.x, this._camera.y);
 
     // Render floating text (on top of everything except overlay)
     this._floatTextManager.render(projection, this._time, this._camera.x, this._camera.y);
