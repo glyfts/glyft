@@ -32,6 +32,7 @@ const SHAPE_WAVE = 1;
 const SHAPE_ZIGZAG = 2;
 const SHAPE_AXE = 3;
 const SHAPE_SPEAR = 4;
+const SHAPE_THRUST = 5;  // Extends outward instead of sweeping
 
 // Gradient types (predefined color ramps in shader)
 const GRADIENT_DUO = 0;      // Just use colorStart → colorEnd
@@ -50,8 +51,8 @@ export interface ArcEffectDef {
   colorEnd?: number;
   /** Predefined gradient: 'duo' | 'fire' | 'ice' | 'holy' | 'poison' | 'shadow' */
   gradient?: 'duo' | 'fire' | 'ice' | 'holy' | 'poison' | 'shadow';
-  /** Shape: 'arc' (default) | 'wave' | 'zigzag' | 'axe' | 'spear' */
-  shape?: 'arc' | 'wave' | 'zigzag' | 'axe' | 'spear';
+  /** Shape: 'arc' (default) | 'wave' | 'zigzag' | 'axe' | 'spear' | 'thrust' */
+  shape?: 'arc' | 'wave' | 'zigzag' | 'axe' | 'spear' | 'thrust';
   /** Wave amplitude as fraction of range (default: 0, max ~0.3) */
   waveAmp?: number;
   /** Wave frequency - number of waves across the arc (default: 2) */
@@ -160,6 +161,7 @@ export function createArcEffectManager(gl: WebGL2RenderingContext): ArcEffectMan
     zigzag: SHAPE_ZIGZAG,
     axe: SHAPE_AXE,
     spear: SHAPE_SPEAR,
+    thrust: SHAPE_THRUST,
   };
 
   return {

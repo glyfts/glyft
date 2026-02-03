@@ -35,6 +35,7 @@ const int SHAPE_WAVE = 1;
 const int SHAPE_ZIGZAG = 2;
 const int SHAPE_AXE = 3;     // Wider at outer edge
 const int SHAPE_SPEAR = 4;   // Pointed tip
+const int SHAPE_THRUST = 5;  // Extends outward instead of sweeping
 
 // Gradient constants
 const int GRADIENT_DUO = 0;
@@ -160,14 +161,33 @@ void main() {
     float innerRadius = 0.15;
     distMod = innerRadius + (dist - innerRadius) * narrowFactor;
   }
+  else if (shapeType == SHAPE_THRUST) {
+    // Thrust - narrow wedge that extends outward
+    // Make it pointed: narrower at the tip (outer edge)
+    float pointFactor = 1.0 - (dist - 0.15) * 0.7;  // Narrower as dist increases
+    arcRadians *= max(pointFactor, 0.2);  // Don't go too narrow
+  }
 
   // ===== SWEEPING ANIMATION =====
   float sweepSpeed = 1.6;
   float sweepProgress = min(t * sweepSpeed, 1.0);
 
-  float distBehindSweep = sweepProgress - angleT;
+  float distBehindSweep;
+  bool cullVertex = false;
 
-  if (angleT > sweepProgress + 0.08) {
+  if (shapeType == SHAPE_THRUST) {
+    // Thrust: extend outward based on dist instead of angleT
+    float innerRadius = 0.15;
+    float normalizedDist = (dist - innerRadius) / (1.0 - innerRadius);  // 0 at inner, 1 at outer
+    distBehindSweep = sweepProgress - normalizedDist;
+    cullVertex = normalizedDist > sweepProgress + 0.15;
+  } else {
+    // Normal sweep: reveal based on angleT (horizontal)
+    distBehindSweep = sweepProgress - angleT;
+    cullVertex = angleT > sweepProgress + 0.08;
+  }
+
+  if (cullVertex) {
     gl_Position = vec4(0.0);
     v_color = vec4(0.0);
     v_dist = 0.0;
@@ -182,7 +202,9 @@ void main() {
   // ===== COLOR =====
   vec3 colStart = unpackColor(a_arcVis.x);
   vec3 colEnd = unpackColor(a_arcVis.y);
-  vec3 color = getGradientColor(gradientType, angleT, colStart, colEnd);
+  // For thrust, color based on distance; for others, based on angleT
+  float colorT = (shapeType == SHAPE_THRUST) ? ((dist - 0.15) / 0.85) : angleT;
+  vec3 color = getGradientColor(gradientType, colorT, colStart, colEnd);
 
   // ===== ALPHA / FADE =====
   // Trail fade - configurable via sweep speed
