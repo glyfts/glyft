@@ -530,6 +530,13 @@ export interface Sprite {
   /** Number of walk animation frames (default: 4) */
   walkFrames: number;
 
+  /**
+   * Row offset added to direction for state-based animation switching.
+   * Use this to switch between animation states (e.g., normal vs swimming).
+   * @example rowOffset = 4 shifts from rows 0-3 to rows 4-7
+   */
+  rowOffset: number;
+
   /** Flip sprite horizontally */
   flipX: boolean;
 

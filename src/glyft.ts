@@ -87,6 +87,7 @@ interface InternalSprite {
   animOnFrame: ((frame: number) => void) | null;
   animCurrentFrame: number;
   lastDirection: number;
+  rowOffset: number;  // Added to direction for state-based row switching (e.g., swimming = +4)
   // Animation config
   idleFrames: number;
   walkFrames: number;
@@ -1006,6 +1007,7 @@ export class GlyftEngine {
       animOnFrame: null,
       animCurrentFrame: -1,
       lastDirection: 0,
+      rowOffset: 0,
       // Animation config (default: 1 idle frame, 4 walk frames, 8 fps)
       idleFrames: 1,
       walkFrames: 4,
@@ -1087,6 +1089,8 @@ export class GlyftEngine {
       set idleFrames(v: number) { sprite.idleFrames = v; },
       get walkFrames() { return sprite.walkFrames; },
       set walkFrames(v: number) { sprite.walkFrames = v; },
+      get rowOffset() { return sprite.rowOffset; },
+      set rowOffset(v: number) { sprite.rowOffset = v; },
       get flipX() { return sprite.flipX; },
       set flipX(v: boolean) { sprite.flipX = v; },
       get flipY() { return sprite.flipY; },
@@ -2504,10 +2508,11 @@ export class GlyftEngine {
         const flipXFlag = sprite.flipX ? 2 : 0;
         const flipYFlag = sprite.flipY ? 4 : 0;
         const shadowBit = sprite.shadow ? 8 : 0;
+        const rowOffsetBits = (sprite.rowOffset & 0xF) << 4;  // Bits 4-7: rowOffset
         const lastDirBits = (sprite.lastDirection & 0xF) << 8;
         const bobAmpBits = (Math.round(sprite.bob) & 0xFF) << 12;
         const bobSpdBits = (Math.round(sprite.bobSpeed * 10) & 0xFF) << 20;
-        this._flagsU32[0] = hasOverride | flipXFlag | flipYFlag | shadowBit | lastDirBits | bobAmpBits | bobSpdBits;
+        this._flagsU32[0] = hasOverride | flipXFlag | flipYFlag | shadowBit | rowOffsetBits | lastDirBits | bobAmpBits | bobSpdBits;
         instanceData[offset + 15] = this._flagsF32[0];
 
         instanceData[offset + 12] = sprite.idleFrames;

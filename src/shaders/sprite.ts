@@ -103,6 +103,7 @@ void main() {
   bool flipX = (uflags & 2u) != 0u;
   bool flipY = (uflags & 4u) != 0u;
   bool hasShadow = (uflags & 8u) != 0u;
+  int rowOffset = int((uflags >> 4u) & 0xFu);  // Bits 4-7: row offset for state switching
   int lastDir = int((uflags >> 8u) & 0xFu);
   float bobAmplitude = float((uflags >> 12u) & 0xFFu);
   float bobSpeed = float((uflags >> 20u) & 0xFFu) * 0.1;
@@ -142,7 +143,7 @@ void main() {
   // Calculate frame position in atlas
   // Rows = directions, Columns = frames
   int col = frameOffset + frame;
-  int row = direction;
+  int row = direction + rowOffset;  // Apply row offset for state switching (e.g., swimming)
 
   vec2 framePos = baseFramePos + vec2(float(col) * frameSize.x, float(row) * frameSize.y);
 
