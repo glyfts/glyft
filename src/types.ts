@@ -546,6 +546,14 @@ export interface Sprite {
   shadow: boolean;
 
   /**
+   * Vertical offset for shadow position in pixels.
+   * Use negative values to move shadow up (closer to sprite), positive to move down.
+   * Useful when sprite artwork has feet not at the bottom of the frame.
+   * @default 0
+   */
+  shadowOffsetY: number;
+
+  /**
    * Glow intensity from 0 (off) to 1 (full).
    * GPU-driven additive glow rendered behind the sprite.
    */

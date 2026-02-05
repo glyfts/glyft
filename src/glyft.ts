@@ -71,6 +71,7 @@ interface InternalSprite {
   bob: number;
   bobSpeed: number;
   shadow: boolean;
+  shadowOffsetY: number;
   glow: number;
   glowColor: number | null;
   glowRadius: number;
@@ -991,6 +992,7 @@ export class GlyftEngine {
       bob: 0,
       bobSpeed: 1.5,
       shadow: false,
+      shadowOffsetY: 0,
       glow: 0,
       glowColor: null,
       glowRadius: 1.5,
@@ -1106,6 +1108,8 @@ export class GlyftEngine {
       set bobSpeed(v: number) { sprite.bobSpeed = Math.min(25.5, Math.max(0, v)); },
       get shadow() { return sprite.shadow; },
       set shadow(v: boolean) { sprite.shadow = v; },
+      get shadowOffsetY() { return sprite.shadowOffsetY; },
+      set shadowOffsetY(v: number) { sprite.shadowOffsetY = v; },
       get glow() { return sprite.glow; },
       set glow(v: number) { sprite.glow = Math.min(1, Math.max(0, v)); },
       get glowColor() { return sprite.glowColor; },
@@ -2520,14 +2524,14 @@ export class GlyftEngine {
       this._tintU32[0] = sprite.tint | 0xFF000000;
       instanceData[offset + 11] = this._tintF32[0];
 
-      // a_glow: intensity, color (packed), radius, unused
+      // a_glow: intensity, color (packed), radius, shadowOffsetY
       instanceData[offset + 16] = sprite.glow;
       // Pack glow color (use tint if glowColor is null)
       const glowColorValue = sprite.glowColor !== null ? sprite.glowColor : sprite.tint;
       this._glowColorU32[0] = glowColorValue | 0xFF000000;
       instanceData[offset + 17] = this._glowColorF32[0];
       instanceData[offset + 18] = sprite.glowRadius;
-      instanceData[offset + 19] = 0; // unused
+      instanceData[offset + 19] = sprite.shadowOffsetY;
     }
 
     // Bind VAO and update instance buffer
