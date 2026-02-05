@@ -58,14 +58,17 @@ void main() {
   vec2 mapUV = (tileCoord + 0.5) / u_mapSize;
   vec4 tileData = texture(u_mapTexture, mapUV);
 
-  // Decode tile index (R channel, 0-255)
-  int tileIndex = int(tileData.r * 255.0);
+  // Decode tile index (R channel, stored as index+1 so 0 means empty)
+  int rawIndex = int(tileData.r * 255.0);
 
-  // Empty tile
-  if (tileIndex == 0) {
+  // Empty tile (0 = no tile)
+  if (rawIndex == 0) {
     fragColor = vec4(0.0);
     return;
   }
+
+  // Convert back to 0-based tile index
+  int tileIndex = rawIndex - 1;
 
   // Calculate tile position in atlas
   int tileX = tileIndex % u_tilesPerRow;

@@ -852,24 +852,25 @@ export class GlyftEngine {
       set: (x: number, y: number, tileIndex: number) => {
         if (x < 0 || x >= tilemap.width || y < 0 || y >= tilemap.height) return;
         const i = (y * tilemap.width + x) * 4;
-        tilemap.data[i] = tileIndex; // R = tile index
+        tilemap.data[i] = tileIndex + 1; // +1 so 0 means empty in shader
         tilemap.dirty = true;
       },
 
       get: (x: number, y: number): number => {
-        if (x < 0 || x >= tilemap.width || y < 0 || y >= tilemap.height) return 0;
+        if (x < 0 || x >= tilemap.width || y < 0 || y >= tilemap.height) return -1;
         const i = (y * tilemap.width + x) * 4;
-        return tilemap.data[i];
+        return tilemap.data[i] - 1; // -1 to undo +1 offset (empty = -1)
       },
 
       fill: (x: number, y: number, w: number, h: number, tileIndex: number) => {
+        const stored = tileIndex + 1;
         for (let dy = 0; dy < h; dy++) {
           for (let dx = 0; dx < w; dx++) {
             const tx = x + dx;
             const ty = y + dy;
             if (tx >= 0 && tx < tilemap.width && ty >= 0 && ty < tilemap.height) {
               const i = (ty * tilemap.width + tx) * 4;
-              tilemap.data[i] = tileIndex;
+              tilemap.data[i] = stored;
             }
           }
         }
@@ -883,7 +884,7 @@ export class GlyftEngine {
             const ty = y + dy;
             if (tx >= 0 && tx < tilemap.width && ty >= 0 && ty < tilemap.height) {
               const i = (ty * tilemap.width + tx) * 4;
-              tilemap.data[i] = data[dy][dx];
+              tilemap.data[i] = data[dy][dx] + 1;
             }
           }
         }
