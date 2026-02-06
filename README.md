@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/language-TypeScript-3178c6?style=flat-square" alt="TypeScript">
   <img src="https://img.shields.io/badge/runtime-WebGL2-ff6600?style=flat-square" alt="WebGL2">
   <img src="https://img.shields.io/badge/dependencies-0-success?style=flat-square" alt="Zero Dependencies">
-  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License">
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Commercial-blue?style=flat-square" alt="License"></a>
 </p>
 
 <p align="center">
@@ -223,4 +223,13 @@ cd glyft && npm install && npm run dev
 
 ## License
 
-MIT
+Glyft is **free for personal projects, learning, and open source**.
+
+A [commercial license](https://glyft.dev/license) is required for:
+- Commercial games and products
+- Closed-source applications
+- Client work and internal business tools
+
+**$80 one-time** — covers your team forever, including future updates.
+
+See [LICENSE.md](./LICENSE.md) for full terms.
