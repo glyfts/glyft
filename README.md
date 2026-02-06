@@ -211,8 +211,9 @@ collisions: {
 git clone https://github.com/glyfts/glyft
 cd glyft && npm install && npm run dev
 # http://localhost:5173/examples/basic/
-# http://localhost:5173/examples/benchmark/
 # http://localhost:5173/examples/rpg/
+# http://localhost:5173/examples/platformer/
+# http://localhost:5173/examples/shmup/
 ```
 
 | Example | Features |
@@ -220,6 +221,8 @@ cd glyft && npm install && npm run dev
 | Basic | Tilemap, sprites, enemies, sounds, music, collisions |
 | Benchmark | 5K-50K animated sprites, FPS counter |
 | RPG | Multi-room dungeon, NPCs, dialogue, combat, projectiles, particles, HP bars, labels |
+| Platformer | Gravity, jumping, platforms, stomping enemies, collectibles, coyote time |
+| Shmup | Bullet hell, radial/spiral/aimed patterns, bombs, graze scoring, boss fights |
 
 ## License
 
