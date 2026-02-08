@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/glyfts/glyft/main/logo.png" alt="Glyft" width="120" height="120">
+  <img src="https://raw.githubusercontent.com/glyfts/glyft/main/logo.png" alt="Glyft" height="140">
 </p>
-
-<h1 align="center">Glyft</h1>
 
 <p align="center">
   <strong>Faster to write. Faster to run.</strong>
