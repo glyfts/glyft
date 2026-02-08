@@ -112,17 +112,19 @@ Glyft batches everything into a single draw call per texture atlas. Animation, d
 
 - **Config-driven** - Collisions, sounds, music, particles defined as data
 - **GPU animation** - Velocity-driven direction and frame selection in shaders
-- **GPU particle system** - Instanced ring-buffer pool, one draw call, zero allocations
-- **GPU HP bars** - Per-sprite health bars rendered entirely on the GPU
-- **GPU labels** - Sprite names and icon indicators with proximity visibility
-- **GPU floating text** - Damage numbers, pickups, XP popups
-- **Declarative SFX** - Design sounds with config, no audio files needed
-- **Declarative music** - Melodies and pads from note sequences, no audio files needed
-- **Reactive sounds** - Pattern-matched triggers with spatial audio
+- **GPU particle system** - Burst particles with color/size fade, gravity, spread
+- **GPU ring effects** - Expanding shockwaves with gradients (fire, ice, holy, poison, shadow)
+- **GPU arc effects** - Directional sweeps with shapes (arc, wave, zigzag, axe, spear, thrust)
+- **GPU floating text** - Damage numbers, pickups, XP popups with rise/pop/bounce styles
+- **GPU HP bars** - Per-sprite health bars with custom colors
+- **GPU labels** - Sprite names and icons with visibility modes (always, hover, proximity)
+- **Tween system** - Animate any property with easing curves (easeIn, easeOut, bounce, elastic)
+- **Declarative SFX** - Synthesized sounds from wave parameters, no audio files needed
+- **Declarative music** - Melodies from note sequences, no audio files needed
+- **Reactive sounds** - Pattern-matched triggers with spatial audio and cooldowns
 - **Collision system** - Pattern-based rules with damage, knockback, magnetize, particles
 - **Canvas HUD** - Multi-panel stats, level/XP bar, room announcements, dialogue box
 - **Addon system** - `game.use()` plugins for projectiles, AI, rooms, dialogue, death, HUD
-- **Tween system** - Animate any property with easing curves
 - **Tiled map loader** - Import maps from Tiled editor
 - **Zero dependencies** - Pure TypeScript + WebGL2
 
