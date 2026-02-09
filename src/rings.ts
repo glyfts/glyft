@@ -47,15 +47,22 @@ export interface RingEffectDef {
   fadeStart?: number;
 }
 
+/** Options passed when emitting a ring */
+export interface RingEmitOptions {
+  /** Callback that returns current position - ring will follow this position each frame */
+  follow?: () => { x: number; y: number };
+}
+
 interface Ring {
   active: boolean;
   birthTime: number;
   duration: number;
+  follow?: () => { x: number; y: number };
 }
 
 export interface RingEffectManager {
   define(name: string, def: RingEffectDef): void;
-  emit(name: string, x: number, y: number, time?: number): void;
+  emit(name: string, x: number, y: number, time?: number, options?: RingEmitOptions): void;
   update(time: number): void;
   render(projection: Float32Array, time: number, cameraX: number, cameraY: number): void;
 }
@@ -311,7 +318,7 @@ export function createRingEffectManager(gl: WebGL2RenderingContext): RingEffectM
       definitions.set(name, def);
     },
 
-    emit(name: string, x: number, y: number, time?: number) {
+    emit(name: string, x: number, y: number, time?: number, options?: RingEmitOptions) {
       const def = definitions.get(name);
       if (!def) {
         console.warn(`[Glyft Rings] Unknown effect: ${name}`);
@@ -348,6 +355,7 @@ export function createRingEffectManager(gl: WebGL2RenderingContext): RingEffectM
       rings[slot].active = true;
       rings[slot].birthTime = now;
       rings[slot].duration = duration;
+      rings[slot].follow = options?.follow;
 
       const base = slot * FLOATS_PER_RING;
       instanceData[base + 0] = x;
@@ -367,14 +375,24 @@ export function createRingEffectManager(gl: WebGL2RenderingContext): RingEffectM
     },
 
     update(time: number) {
-      // Mark expired rings as inactive
+      // Mark expired rings as inactive and update following positions
       for (let i = 0; i < MAX_RINGS; i++) {
-        if (rings[i].active) {
-          const elapsed = time - rings[i].birthTime;
-          if (elapsed > rings[i].duration) {
-            rings[i].active = false;
-            activeCount = Math.max(0, activeCount - 1);
-          }
+        if (!rings[i].active) continue;
+
+        const elapsed = time - rings[i].birthTime;
+        if (elapsed > rings[i].duration) {
+          rings[i].active = false;
+          rings[i].follow = undefined;
+          activeCount = Math.max(0, activeCount - 1);
+          continue;
+        }
+
+        // Update position if following
+        if (rings[i].follow) {
+          const pos = rings[i].follow!();
+          const base = i * FLOATS_PER_RING;
+          instanceData[base + 0] = pos.x;
+          instanceData[base + 1] = pos.y;
         }
       }
     },

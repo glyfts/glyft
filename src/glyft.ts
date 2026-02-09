@@ -41,8 +41,8 @@ import { createFloatTextManager, generateFontAtlas, packColorF32, type FloatText
 import { createLabelManager, type LabelManager, type LabelSpriteData } from './labels';
 import { createHpBarManager, type HpBarManager } from './hpbars';
 import { createParticleManager, type ParticleManager } from './particles';
-import { createArcEffectManager, type ArcEffectManager, type ArcEffectDef } from './arcs';
-import { createRingEffectManager, type RingEffectManager, type RingEffectDef } from './rings';
+import { createArcEffectManager, type ArcEffectManager, type ArcEffectDef, type ArcEmitOptions } from './arcs';
+import { createRingEffectManager, type RingEffectManager, type RingEffectDef, type RingEmitOptions } from './rings';
 import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
 
 // -----------------------------------------------------------------------------
@@ -1505,8 +1505,8 @@ export class GlyftEngine {
     const self = this;
     return {
       define(name: string, def: ArcEffectDef) { self._arcManager.define(name, def); },
-      emit(name: string, x: number, y: number, angle: number, arcDegrees: number, range: number) {
-        self._arcManager.emit(name, x, y, angle, arcDegrees, range, self._time);
+      emit(name: string, x: number, y: number, angle: number, arcDegrees: number, range: number, options?: ArcEmitOptions) {
+        self._arcManager.emit(name, x, y, angle, arcDegrees, range, self._time, options);
       },
     };
   }
@@ -1516,8 +1516,8 @@ export class GlyftEngine {
     const self = this;
     return {
       define(name: string, def: RingEffectDef) { self._ringManager.define(name, def); },
-      emit(name: string, x: number, y: number) {
-        self._ringManager.emit(name, x, y, self._time);
+      emit(name: string, x: number, y: number, options?: RingEmitOptions) {
+        self._ringManager.emit(name, x, y, self._time, options);
       },
     };
   }

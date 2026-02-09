@@ -59,15 +59,22 @@ export interface ArcEffectDef {
   waveFreq?: number;
 }
 
+/** Options passed when emitting an arc */
+export interface ArcEmitOptions {
+  /** Callback that returns current position - arc will follow this position each frame */
+  follow?: () => { x: number; y: number };
+}
+
 interface Arc {
   active: boolean;
   birthTime: number;
   duration: number;
+  follow?: () => { x: number; y: number };
 }
 
 export interface ArcEffectManager {
   define(name: string, def: ArcEffectDef): void;
-  emit(name: string, x: number, y: number, angle: number, arcDegrees: number, range: number, time: number): void;
+  emit(name: string, x: number, y: number, angle: number, arcDegrees: number, range: number, time: number, options?: ArcEmitOptions): void;
   update(time: number): void;
   render(projection: Float32Array, time: number, cameraX: number, cameraY: number): void;
 }
@@ -169,7 +176,7 @@ export function createArcEffectManager(gl: WebGL2RenderingContext): ArcEffectMan
       effects.set(name, def);
     },
 
-    emit(name: string, x: number, y: number, angle: number, arcDegrees: number, range: number, time: number): void {
+    emit(name: string, x: number, y: number, angle: number, arcDegrees: number, range: number, time: number, options?: ArcEmitOptions): void {
       const def = effects.get(name);
       if (!def) {
         console.warn(`[Glyft] Unknown arc effect: "${name}"`);
@@ -195,6 +202,7 @@ export function createArcEffectManager(gl: WebGL2RenderingContext): ArcEffectMan
       arcs[slot].active = true;
       arcs[slot].birthTime = time;
       arcs[slot].duration = duration;
+      arcs[slot].follow = options?.follow;
 
       const off = slot * FLOATS_PER_ARC;
 
@@ -219,8 +227,21 @@ export function createArcEffectManager(gl: WebGL2RenderingContext): ArcEffectMan
 
     update(time: number): void {
       for (let i = 0; i < MAX_ARCS; i++) {
-        if (arcs[i].active && time - arcs[i].birthTime > arcs[i].duration) {
+        if (!arcs[i].active) continue;
+
+        // Check if expired
+        if (time - arcs[i].birthTime > arcs[i].duration) {
           arcs[i].active = false;
+          arcs[i].follow = undefined;
+          continue;
+        }
+
+        // Update position if following
+        if (arcs[i].follow) {
+          const pos = arcs[i].follow!();
+          const off = i * FLOATS_PER_ARC;
+          instancePool[off + 0] = pos.x;
+          instancePool[off + 1] = pos.y;
         }
       }
     },

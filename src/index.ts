@@ -75,10 +75,10 @@ export type {
 } from './types';
 
 // Re-export arc effect types
-export type { ArcEffectDef } from './arcs';
+export type { ArcEffectDef, ArcEmitOptions } from './arcs';
 
 // Re-export ring effect types
-export type { RingEffectDef } from './rings';
+export type { RingEffectDef, RingEmitOptions } from './rings';
 
 // Re-export from network for convenience
 export type { NetworkAdapter as INetworkAdapter } from './network';
