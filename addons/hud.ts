@@ -145,7 +145,7 @@ export interface HudConfig {
 /** HUD addon public API */
 export interface HudAddon extends GlyftAddon {
   /** Show a centered announcement (called by rooms addon on room load, etc.) */
-  announce(text: string): void;
+  announce(text: string, color?: number): void;
   /** Show the dialogue box (called by the dialogue addon) */
   showDialogue(speaker: string | null, text: string, lineIndex: number, lineCount: number): void;
   /** Hide the dialogue box (called by the dialogue addon) */
@@ -263,6 +263,7 @@ export function hud(config: HudConfig = {}): HudAddon {
   // Announcement state (set by announce())
   let announceText: string | null = null;
   let announceStartTime = 0;
+  let announceColor = annColor; // Per-announcement color override
 
   // Dialogue style
   const dlgConf = config.dialogue ?? {};
@@ -402,7 +403,7 @@ export function hud(config: HudConfig = {}): HudAddon {
     ctx.textBaseline = 'middle';
     const tx = Math.floor(vw / 2);
     const ty = stripY + Math.floor(stripH / 2);
-    outlinedText(ctx, announceText, tx, ty, hexToRgba(annColor, alpha), `rgba(0,0,0,${alpha.toFixed(2)})`, outlineWidth);
+    outlinedText(ctx, announceText, tx, ty, hexToRgba(announceColor, alpha), `rgba(0,0,0,${alpha.toFixed(2)})`, outlineWidth);
 
     ctx.restore();
   }
@@ -485,9 +486,10 @@ export function hud(config: HudConfig = {}): HudAddon {
       drawDialogue(ctx, vw, vh);
     },
 
-    announce(text: string) {
+    announce(text: string, color?: number) {
       announceText = text;
       announceStartTime = game.time;
+      announceColor = color ?? annColor;
     },
 
     showDialogue(speaker: string | null, text: string, lineIndex: number, lineCount: number) {
