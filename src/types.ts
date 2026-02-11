@@ -904,6 +904,12 @@ export interface Glyft {
   readonly time: number;
   /** Delta time */
   readonly dt: number;
+  /** Current frames per second (updated every 500ms) */
+  readonly fps: number;
+  /** Average time per frame in milliseconds */
+  readonly frameTime: number;
+  /** Total number of active sprites */
+  readonly spriteCount: number;
   /** Screen-space overlay for HUD/UI. Lazily initialized, cleared each frame. */
   readonly overlay: CanvasRenderingContext2D;
 

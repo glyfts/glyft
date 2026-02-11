@@ -203,6 +203,12 @@ export class GlyftEngine {
   private _depthSortCounter = 0;
   private _sortedSpriteCache: InternalSprite[] = [];
 
+  // FPS tracking
+  private _fpsFrameCount = 0;
+  private _fpsLastTime = 0;
+  private _fps = 0;
+  private _frameTime = 0;
+
   // Reactive rules
   private _soundRules: Map<string, SoundRule | string> = new Map();
   private _collisionRules: Map<string, CollisionAction | string> = new Map();
@@ -446,6 +452,21 @@ export class GlyftEngine {
 
   get stats(): Stats {
     return this._stats;
+  }
+
+  /** Current frames per second (updated every 500ms) */
+  get fps(): number {
+    return this._fps;
+  }
+
+  /** Average time per frame in milliseconds */
+  get frameTime(): number {
+    return this._frameTime;
+  }
+
+  /** Total number of active sprites */
+  get spriteCount(): number {
+    return this._sprites.size;
   }
 
   get overlay(): CanvasRenderingContext2D {
@@ -1809,6 +1830,16 @@ export class GlyftEngine {
     this._dt = Math.min((now - this._lastFrameTime) / 1000, 0.1); // Cap at 100ms
     this._time += this._dt;
     this._lastFrameTime = now;
+
+    // FPS tracking
+    this._fpsFrameCount++;
+    const fpsElapsed = now - this._fpsLastTime;
+    if (fpsElapsed >= 500) {
+      this._fps = Math.round((this._fpsFrameCount / fpsElapsed) * 1000);
+      this._frameTime = fpsElapsed / this._fpsFrameCount;
+      this._fpsFrameCount = 0;
+      this._fpsLastTime = now;
+    }
 
     // Update tweens
     this._tweenManager.update(this._dt * 1000);
