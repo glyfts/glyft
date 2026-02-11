@@ -133,11 +133,13 @@ void main() {
   }
 
   // Calculate animation frame
-  int numFrames = isMoving ? walkFrames : idleFrames;
-  int frameOffset = isMoving ? idleFrames : 0;
+  // If walkFrames = 0, always use idle animation (for sprites without walk cycle)
+  bool useWalk = isMoving && walkFrames > 0;
+  int numFrames = useWalk ? walkFrames : idleFrames;
+  int frameOffset = useWalk ? idleFrames : 0;
 
   // Use slower fps for idle
-  float actualFps = isMoving ? fps : fps * 0.5;
+  float actualFps = useWalk ? fps : fps * 0.5;
   int frame = int(mod(u_time * actualFps, float(numFrames)));
 
   // Calculate frame position in atlas
