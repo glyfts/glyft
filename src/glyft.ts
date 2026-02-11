@@ -44,6 +44,7 @@ import { createParticleManager, type ParticleManager } from './particles';
 import { createArcEffectManager, type ArcEffectManager, type ArcEffectDef, type ArcEmitOptions } from './arcs';
 import { createRingEffectManager, type RingEffectManager, type RingEffectDef, type RingEmitOptions } from './rings';
 import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
+import { backgroundVertexShader, backgroundFragmentShader } from './shaders/background';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -54,6 +55,7 @@ interface InternalSprite {
   type: string;
   x: number;
   y: number;
+  z: number;  // Layer depth for sorting (higher = on top)
   vx: number;
   vy: number;
   rotation: number;
@@ -71,6 +73,12 @@ interface InternalSprite {
   bob: number;
   bobSpeed: number;
   shadow: boolean;
+  // Velocity-based movement: Glyft updates x/y from vx/vy each frame
+  physics: boolean;
+  // Auto-flip: set flipX based on vx direction (for side-profile sprites)
+  autoFlip: boolean;
+  // Per-sprite mode override (null = use global config)
+  spriteMode: '4dir' | '8dir' | '2dir-side' | '2dir-top' | '1dir' | 'iso4' | 'iso8' | null;
   shadowOffsetY: number;
   glow: number;
   glowColor: number | null;
@@ -184,6 +192,12 @@ export class GlyftEngine {
   private _overlayTexture: WebGLTexture | null = null;
   private _overlayShader: ShaderProgram | null = null;
   private _overlayActive = false;
+
+  // Background image (static, scrolls with camera)
+  private _bgTexture: WebGLTexture | null = null;
+  private _bgWorldWidth = 0;
+  private _bgWorldHeight = 0;
+  private _bgShader: ShaderProgram | null = null;
 
   // Depth sorting
   private _depthSortCounter = 0;
@@ -667,6 +681,47 @@ export class GlyftEngine {
   }
 
   /**
+   * Set a static background image that covers the world bounds.
+   * The camera viewport scrolls over this background.
+   */
+  async setBackground(url: string, worldWidth: number, worldHeight: number): Promise<void> {
+    const gl = this.gl;
+    const texture = await loadTexture(gl, url);
+
+    // Use LINEAR filtering for smooth background scrolling
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    this._bgTexture = texture;
+    this._bgWorldWidth = worldWidth;
+    this._bgWorldHeight = worldHeight;
+
+    // Compile shader lazily
+    if (!this._bgShader) {
+      this._bgShader = compileShader(
+        gl,
+        backgroundVertexShader,
+        backgroundFragmentShader,
+        ['u_viewport', 'u_worldSize', 'u_camera', 'u_texture'],
+        ['a_position'],
+      );
+    }
+  }
+
+  /**
+   * Clear the background image.
+   */
+  clearBackground(): void {
+    if (this._bgTexture) {
+      this.gl.deleteTexture(this._bgTexture);
+      this._bgTexture = null;
+    }
+    this._bgWorldWidth = 0;
+    this._bgWorldHeight = 0;
+  }
+
+  /**
    * Load a single image as a texture atlas.
    * If frameWidth/frameHeight are provided, the image is split into a grid of frames.
    * Otherwise, the entire image is a single frame named after the key.
@@ -688,8 +743,8 @@ export class GlyftEngine {
    * });
    * ```
    */
-  async loadTexture(key: string, url: string, options?: { frameWidth?: number; frameHeight?: number }): Promise<Atlas> {
-    const texture = await loadTexture(this.gl, url);
+  async loadTexture(key: string, url: string, options?: { frameWidth?: number; frameHeight?: number; filter?: 'nearest' | 'linear' }): Promise<Atlas> {
+    const texture = await loadTexture(this.gl, url, { filter: options?.filter });
 
     // Get image dimensions
     const image = new Image();
@@ -978,6 +1033,7 @@ export class GlyftEngine {
       type,
       x: 0,
       y: 0,
+      z: 0,
       vx: 0,
       vy: 0,
       rotation: 0,
@@ -995,6 +1051,9 @@ export class GlyftEngine {
       bobSpeed: 1.5,
       shadow: false,
       shadowOffsetY: 0,
+      physics: false,
+      autoFlip: false,
+      spriteMode: null,
       glow: 0,
       glowColor: null,
       glowRadius: 1.5,
@@ -1064,6 +1123,8 @@ export class GlyftEngine {
       set x(v: number) { sprite.x = v; },
       get y() { return sprite.y; },
       set y(v: number) { sprite.y = v; },
+      get z() { return sprite.z; },
+      set z(v: number) { sprite.z = v; },
       get vx() { return sprite.vx; },
       set vx(v: number) {
         if (v !== 0 || sprite.vy !== 0) {
@@ -1111,6 +1172,12 @@ export class GlyftEngine {
       set bob(v: number) { sprite.bob = Math.min(255, Math.max(0, v)); },
       get bobSpeed() { return sprite.bobSpeed; },
       set bobSpeed(v: number) { sprite.bobSpeed = Math.min(25.5, Math.max(0, v)); },
+      get physics() { return sprite.physics; },
+      set physics(v: boolean) { sprite.physics = v; },
+      get autoFlip() { return sprite.autoFlip; },
+      set autoFlip(v: boolean) { sprite.autoFlip = v; },
+      get spriteMode() { return sprite.spriteMode; },
+      set spriteMode(v) { sprite.spriteMode = v; },
       get shadow() { return sprite.shadow; },
       set shadow(v: boolean) { sprite.shadow = v; },
       get shadowOffsetY() { return sprite.shadowOffsetY; },
@@ -1752,6 +1819,9 @@ export class GlyftEngine {
     // Update pointer hover tracking (fires pointerover/pointerout)
     this._updatePointerEvents();
 
+    // Update sprite physics (velocity-based movement, auto-flip)
+    this._updatePhysics(this._dt);
+
     // Addon: preUpdate (before user callbacks)
     for (const addon of this._addons) addon.preUpdate?.(this._dt);
 
@@ -1924,6 +1994,24 @@ export class GlyftEngine {
   private _extractTag(p: string): string | null {
     if (p.startsWith('[') && p.endsWith(']')) return p.slice(1, -1);
     return null;
+  }
+
+  private _updatePhysics(dt: number): void {
+    // Update position and auto-flip for sprites with physics enabled
+    for (const sprite of this._sprites.values()) {
+      if (!sprite.exists) continue;
+
+      if (sprite.physics) {
+        sprite.x += sprite.vx * dt;
+        sprite.y += sprite.vy * dt;
+      }
+
+      if (sprite.autoFlip && sprite.vx !== 0) {
+        // For side-profile sprites: flip based on horizontal direction
+        // Assumes sprite faces LEFT by default, flip when moving right
+        sprite.flipX = sprite.vx > 0;
+      }
+    }
   }
 
   private _updateMagnetize(dt: number): void {
@@ -2255,6 +2343,37 @@ export class GlyftEngine {
     gl.bindVertexArray(null);
   }
 
+  private _renderBackground(): void {
+    if (!this._bgTexture || !this._bgShader) return;
+
+    const gl = this.gl;
+    const viewport = this.config.settings.viewport;
+
+    // Disable blending for opaque background
+    gl.disable(gl.BLEND);
+
+    gl.useProgram(this._bgShader.program);
+    gl.bindVertexArray(this._quadVAO);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this._bgTexture);
+
+    // Round camera to prevent sub-pixel shimmer
+    const camX = Math.round(this._camera.x);
+    const camY = Math.round(this._camera.y);
+
+    gl.uniform2f(this._bgShader.uniforms['u_viewport'], viewport[0], viewport[1]);
+    gl.uniform2f(this._bgShader.uniforms['u_worldSize'], this._bgWorldWidth, this._bgWorldHeight);
+    gl.uniform2f(this._bgShader.uniforms['u_camera'], camX, camY);
+    gl.uniform1i(this._bgShader.uniforms['u_texture'], 0);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.bindVertexArray(null);
+
+    // Re-enable blending for sprites/particles
+    gl.enable(gl.BLEND);
+  }
+
   private _render(): void {
     const gl = this.gl;
     const viewport = this.config.settings.viewport;
@@ -2268,6 +2387,9 @@ export class GlyftEngine {
 
     // Update camera
     this._camera.update(this._dt);
+
+    // Render background (behind everything)
+    this._renderBackground();
 
     // Calculate projection matrix (orthographic, pixel-perfect)
     const projection = this._calculateProjection();
@@ -2383,12 +2505,22 @@ export class GlyftEngine {
       this._sortedSpriteCache.push(sprite);
     }
 
-    // Y-depth sort (throttled)
-    if (depthSort === 'y') {
+    // Depth sort (throttled)
+    if (depthSort !== 'none') {
       this._depthSortCounter++;
       if (this._depthSortCounter >= depthSortInterval) {
         this._depthSortCounter = 0;
-        this._sortedSpriteCache.sort((a, b) => (a.y + a.frameH) - (b.y + b.frameH));
+        if (depthSort === 'y') {
+          this._sortedSpriteCache.sort((a, b) => (a.y + a.frameH) - (b.y + b.frameH));
+        } else if (depthSort === 'z') {
+          this._sortedSpriteCache.sort((a, b) => a.z - b.z);
+        } else if (depthSort === 'zy') {
+          // Sort by z first, then by y within same z-layer
+          this._sortedSpriteCache.sort((a, b) => {
+            if (a.z !== b.z) return a.z - b.z;
+            return (a.y + a.frameH) - (b.y + b.frameH);
+          });
+        }
       }
     }
 

@@ -97,10 +97,12 @@ export interface GlyftSettings {
   /**
    * Depth sorting mode for sprites.
    * - `'y'` - Sort by Y position (lower = in front). Good for top-down RPGs.
+   * - `'z'` - Sort by Z layer (lower = behind). Good for layered 2D games.
+   * - `'zy'` - Sort by Z first, then Y within same layer. Best of both.
    * - `'none'` - No sorting, render in creation order.
    * @default 'none'
    */
-  depthSort?: 'y' | 'none';
+  depthSort?: 'y' | 'z' | 'zy' | 'none';
 
   /**
    * How often to perform depth sorting (every N frames).
@@ -497,6 +499,13 @@ export interface Sprite {
   y: number;
 
   /**
+   * Z layer for depth sorting.
+   * Higher values render on top. Only used when depthSort is 'z' or 'zy'.
+   * @default 0
+   */
+  z: number;
+
+  /**
    * X velocity in pixels/second.
    * The GPU shader uses velocity to determine direction and animation.
    * Set this for movement - don't modify `x` directly in the game loop.
@@ -548,6 +557,27 @@ export interface Sprite {
 
   /** Bob frequency in Hz (default 1.5). */
   bobSpeed: number;
+
+  /**
+   * Enable velocity-based movement. When true, Glyft updates x/y from vx/vy each frame.
+   * Use this for sprites that move continuously (enemies, projectiles).
+   * @default false
+   */
+  physics: boolean;
+
+  /**
+   * Enable automatic horizontal flip based on vx direction.
+   * When true and vx !== 0, flipX is set automatically (left = flipped).
+   * Use for side-profile sprites that should face their movement direction.
+   * @default false
+   */
+  autoFlip: boolean;
+
+  /**
+   * Per-sprite mode override. Set to override the global spriteMode for this sprite.
+   * @default null (uses global config)
+   */
+  spriteMode: '4dir' | '8dir' | '2dir-side' | '2dir-top' | '1dir' | 'iso4' | 'iso8' | null;
 
   /** Render a dark ellipse shadow at sprite base position. */
   shadow: boolean;
@@ -876,6 +906,19 @@ export interface Glyft {
   readonly dt: number;
   /** Screen-space overlay for HUD/UI. Lazily initialized, cleared each frame. */
   readonly overlay: CanvasRenderingContext2D;
+
+  /**
+   * Set a static background image that covers the world bounds.
+   * The camera viewport scrolls over this background.
+   *
+   * @param url - URL to the background image
+   * @param worldWidth - Width of the world in pixels
+   * @param worldHeight - Height of the world in pixels
+   */
+  setBackground(url: string, worldWidth: number, worldHeight: number): Promise<void>;
+
+  /** Clear the background image */
+  clearBackground(): void;
 
   /** Load texture atlas */
   loadAtlas(imagePath: string, dataPath: string | object): Promise<Atlas>;
