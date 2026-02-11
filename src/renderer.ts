@@ -252,7 +252,8 @@ function parseShaderErrors(log: string, source: string): string {
  */
 export async function loadTexture(
   gl: WebGL2RenderingContext,
-  url: string
+  url: string,
+  options?: { filter?: 'nearest' | 'linear' }
 ): Promise<WebGLTexture> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -274,9 +275,10 @@ export async function loadTexture(
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
 
-      // Pixel-perfect settings (no filtering, no mipmaps)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      // Filtering: nearest for pixel art, linear for smooth art
+      const filterMode = options?.filter === 'linear' ? gl.LINEAR : gl.NEAREST;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filterMode);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filterMode);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
