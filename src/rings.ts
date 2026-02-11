@@ -298,7 +298,8 @@ export function createRingEffectManager(gl: WebGL2RenderingContext): RingEffectM
     rings.push({ active: false, birthTime: 0, duration: 0 });
   }
 
-  let activeCount = 0;
+  // Compact buffer for active rings only
+  const activeBuffer = new Float32Array(MAX_RINGS * FLOATS_PER_RING);
   let writeIndex = 0;
 
   function getGradientType(name?: string): number {
@@ -370,8 +371,6 @@ export function createRingEffectManager(gl: WebGL2RenderingContext): RingEffectM
       instanceData[base + 9] = duration;
       instanceData[base + 10] = fadeStart;
       instanceData[base + 11] = 0;  // unused
-
-      activeCount++;
     },
 
     update(time: number) {
@@ -383,7 +382,6 @@ export function createRingEffectManager(gl: WebGL2RenderingContext): RingEffectM
         if (elapsed > rings[i].duration) {
           rings[i].active = false;
           rings[i].follow = undefined;
-          activeCount = Math.max(0, activeCount - 1);
           continue;
         }
 
@@ -398,6 +396,18 @@ export function createRingEffectManager(gl: WebGL2RenderingContext): RingEffectM
     },
 
     render(projection: Float32Array, time: number, cameraX: number, cameraY: number) {
+      // Compact active rings into contiguous buffer
+      let activeCount = 0;
+      for (let i = 0; i < MAX_RINGS; i++) {
+        if (!rings[i].active) continue;
+        const srcOff = i * FLOATS_PER_RING;
+        const dstOff = activeCount * FLOATS_PER_RING;
+        for (let j = 0; j < FLOATS_PER_RING; j++) {
+          activeBuffer[dstOff + j] = instanceData[srcOff + j];
+        }
+        activeCount++;
+      }
+
       if (activeCount === 0) return;
 
       gl.useProgram(shader.program);
@@ -405,16 +415,16 @@ export function createRingEffectManager(gl: WebGL2RenderingContext): RingEffectM
       gl.uniform1f(u_time, time);
       gl.uniform2f(u_camera, cameraX, cameraY);
 
-      // Upload instance data
+      // Upload only active instance data
       gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, activeBuffer, 0, activeCount * FLOATS_PER_RING);
 
       // Enable blending for transparency
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE);  // Additive blending for glow
 
       gl.bindVertexArray(vao);
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, VERTS_PER_RING, MAX_RINGS);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, VERTS_PER_RING, activeCount);
       gl.bindVertexArray(null);
 
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);  // Restore normal blending
