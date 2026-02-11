@@ -4,3 +4,4 @@ dist-rpg/
 *.log
 .DS_Store
 dist-demos
+examples/claude/
