@@ -40,6 +40,7 @@ out vec2 v_localUV;
 out float v_hasShadow;
 out float v_glowIntensity;
 out vec3 v_glowColor;
+out float v_clipBottom;
 
 // Unpack tint from float (RGB packed into 32 bits)
 vec3 unpackTint(float packed) {
@@ -107,6 +108,10 @@ void main() {
   int lastDir = int((uflags >> 8u) & 0xFu);
   float bobAmplitude = float((uflags >> 12u) & 0xFFu);
   float bobSpeed = float((uflags >> 20u) & 0xFFu) * 0.1;
+  float clipBottom = float((uflags >> 28u) & 0xFu) / 15.0;  // Bits 28-31: 0.0-1.0
+
+  // Pass clipBottom to fragment shader
+  v_clipBottom = clipBottom;
 
   // Determine direction based on velocity and sprite mode
   int direction = 0;
@@ -243,6 +248,11 @@ void main() {
     vec2 worldPos = pos + rotatedPos - u_cameraPos;
     worldPos.y -= bobOffset;
 
+    // Sink sprite down when clipping bottom (e.g., wading in water)
+    if (clipBottom > 0.0) {
+      worldPos.y += clipBottom * frameSize.y * scale;
+    }
+
     vec3 projected = u_projection * vec3(worldPos, 1.0);
     gl_Position = vec4(projected.xy, 0.0, 1.0);
   }
@@ -263,6 +273,7 @@ in vec2 v_localUV;
 in float v_hasShadow;
 in float v_glowIntensity;
 in vec3 v_glowColor;
+in float v_clipBottom;
 
 out vec4 fragColor;
 
@@ -304,6 +315,9 @@ void main() {
 
   // Discard transparent pixels
   if (texColor.a < 0.01) discard;
+
+  // Clip bottom portion of sprite (for wading in water, etc.)
+  if (v_clipBottom > 0.0 && v_localUV.y > (1.0 - v_clipBottom)) discard;
 
   // Apply tint and alpha
   fragColor = vec4(texColor.rgb * v_tint, texColor.a * v_alpha);

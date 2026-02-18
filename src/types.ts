@@ -608,6 +608,13 @@ export interface Sprite {
    */
   glowRadius: number;
 
+  /**
+   * Clip bottom portion of sprite (0.0-1.0).
+   * 0.0 = no clipping, 0.5 = hide bottom half, 1.0 = fully hidden.
+   * Useful for wading in water, sinking, etc.
+   */
+  clipBottom: number;
+
   /** Text label displayed above sprite (null = no label). Max 16 characters. */
   label: string | null;
 

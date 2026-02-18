@@ -83,6 +83,7 @@ interface InternalSprite {
   glow: number;
   glowColor: number | null;
   glowRadius: number;
+  clipBottom: number;  // 0.0-1.0: clip bottom portion of sprite (for wading in water)
   atlas: InternalAtlas;
   exists: boolean;
   // Named animation registry
@@ -1078,6 +1079,7 @@ export class GlyftEngine {
       glow: 0,
       glowColor: null,
       glowRadius: 1.5,
+      clipBottom: 0,
       atlas: internalAtlas,
       exists: true,
       animations: new Map(),
@@ -1209,6 +1211,8 @@ export class GlyftEngine {
       set glowColor(v: number | null) { sprite.glowColor = v; },
       get glowRadius() { return sprite.glowRadius; },
       set glowRadius(v: number) { sprite.glowRadius = Math.max(1, v); },
+      get clipBottom() { return sprite.clipBottom; },
+      set clipBottom(v: number) { sprite.clipBottom = Math.min(1, Math.max(0, v)); },
       get label() { return sprite.labelText; },
       set label(v: string | null) {
         if (v === sprite.labelText) return;
@@ -2676,7 +2680,8 @@ export class GlyftEngine {
         const lastDirBits = (sprite.lastDirection & 0xF) << 8;
         const bobAmpBits = (Math.round(sprite.bob) & 0xFF) << 12;
         const bobSpdBits = (Math.round(sprite.bobSpeed * 10) & 0xFF) << 20;
-        this._flagsU32[0] = hasOverride | flipXFlag | flipYFlag | shadowBit | rowOffsetBits | lastDirBits | bobAmpBits | bobSpdBits;
+        const clipBottomBits = (Math.round(sprite.clipBottom * 15) & 0xF) << 28;  // Bits 28-31: clipBottom (0-15 = 0.0-1.0)
+        this._flagsU32[0] = hasOverride | flipXFlag | flipYFlag | shadowBit | rowOffsetBits | lastDirBits | bobAmpBits | bobSpdBits | clipBottomBits;
         instanceData[offset + 15] = this._flagsF32[0];
 
         instanceData[offset + 12] = sprite.idleFrames;
