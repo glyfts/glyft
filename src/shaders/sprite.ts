@@ -24,7 +24,7 @@ layout(location = 2) in vec4 a_frame;     // u, v, w, h (base frame in atlas)
 layout(location = 3) in vec4 a_props;     // rotation, scale, alpha, tint (packed)
 layout(location = 4) in vec4 a_anim;      // idleFrames, walkFrames, fps, flags
 layout(location = 5) in vec4 a_glow;      // intensity, color (packed), radius, shadowOffsetY
-layout(location = 6) in vec4 a_shadow;    // scale, alpha, unused, unused
+layout(location = 6) in vec4 a_shadow;    // scale, alpha, visualOffsetY, unused
 
 // Uniforms
 uniform mat3 u_projection;
@@ -256,6 +256,10 @@ void main() {
     if (clipBottom > 0.0) {
       worldPos.y += clipBottom * frameSize.y * scale;
     }
+
+    // Apply visual Y offset (moves sprite without affecting collision)
+    float visualOffsetY = a_shadow.z;
+    worldPos.y += visualOffsetY;
 
     vec3 projected = u_projection * vec3(worldPos, 1.0);
     gl_Position = vec4(projected.xy, 0.0, 1.0);

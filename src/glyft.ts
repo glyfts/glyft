@@ -80,6 +80,7 @@ interface InternalSprite {
   // Per-sprite mode override (null = use global config)
   spriteMode: '4dir' | '8dir' | '2dir-side' | '2dir-top' | '1dir' | 'iso4' | 'iso8' | null;
   shadowOffsetY: number;
+  visualOffsetY: number;
   shadowScale: number;
   shadowAlpha: number;
   glow: number;
@@ -1075,6 +1076,7 @@ export class GlyftEngine {
       bobSpeed: 1.5,
       shadow: false,
       shadowOffsetY: 0,
+      visualOffsetY: 0,
       shadowScale: 1.0,
       shadowAlpha: 0.5,
       physics: false,
@@ -1209,6 +1211,8 @@ export class GlyftEngine {
       set shadow(v: boolean) { sprite.shadow = v; },
       get shadowOffsetY() { return sprite.shadowOffsetY; },
       set shadowOffsetY(v: number) { sprite.shadowOffsetY = v; },
+      get visualOffsetY() { return sprite.visualOffsetY; },
+      set visualOffsetY(v: number) { sprite.visualOffsetY = v; },
       get shadowScale() { return sprite.shadowScale; },
       set shadowScale(v: number) { sprite.shadowScale = Math.min(2, Math.max(0, v)); },
       get shadowAlpha() { return sprite.shadowAlpha; },
@@ -2715,10 +2719,10 @@ export class GlyftEngine {
       instanceData[offset + 18] = sprite.glowRadius;
       instanceData[offset + 19] = sprite.shadowOffsetY;
 
-      // a_shadow: scale, alpha, unused, unused
+      // a_shadow: scale, alpha, visualOffsetY, unused
       instanceData[offset + 20] = sprite.shadowScale;
       instanceData[offset + 21] = sprite.shadowAlpha;
-      instanceData[offset + 22] = 0;  // Reserved
+      instanceData[offset + 22] = sprite.visualOffsetY;
       instanceData[offset + 23] = 0;  // Reserved
     }
 

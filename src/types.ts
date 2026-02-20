@@ -591,6 +591,13 @@ export interface Sprite {
   shadowOffsetY: number;
 
   /**
+   * Visual Y offset for rendering. Moves sprite down (positive) or up (negative)
+   * without affecting collision/logical position. Use to align sprite with shadow.
+   * @default 0
+   */
+  visualOffsetY: number;
+
+  /**
    * Shadow scale multiplier (0.0-2.0).
    * Controls shadow size relative to sprite. 1.0 = normal, 0.5 = half size.
    * Useful for elevation effects - smaller shadow when sprite is higher.
