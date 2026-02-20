@@ -24,6 +24,7 @@ layout(location = 2) in vec4 a_frame;     // u, v, w, h (base frame in atlas)
 layout(location = 3) in vec4 a_props;     // rotation, scale, alpha, tint (packed)
 layout(location = 4) in vec4 a_anim;      // idleFrames, walkFrames, fps, flags
 layout(location = 5) in vec4 a_glow;      // intensity, color (packed), radius, shadowOffsetY
+layout(location = 6) in vec4 a_shadow;    // scale, alpha, unused, unused
 
 // Uniforms
 uniform mat3 u_projection;
@@ -213,10 +214,13 @@ void main() {
     if (bobAmplitude > 0.0) {
       bobOffset = sin(u_time * bobSpeed * 6.28318) * bobAmplitude;
     }
+    // Shadow scale and alpha from a_shadow attribute
+    float shadowScale = a_shadow.x;
+    float shadowAlpha = a_shadow.y;
     // Shadow expands when sprite is higher, shrinks when lower
     float shadowExpand = 1.0 + bobOffset * 0.04;
-    float shadowW = frameSize.x * scale * 0.8 * shadowExpand;
-    float shadowH = frameSize.x * scale * 0.25 * shadowExpand;
+    float shadowW = frameSize.x * scale * 0.8 * shadowExpand * shadowScale;
+    float shadowH = frameSize.x * scale * 0.25 * shadowExpand * shadowScale;
     vec2 shadowLocal = a_position * vec2(shadowW, shadowH);
     // Center shadow under sprite base (top of shadow aligns with sprite bottom)
     // shadowOffsetY allows adjusting shadow position for sprites where feet aren't at frame bottom
@@ -224,8 +228,8 @@ void main() {
     float offsetX = (frameSize.x * scale - shadowW) * 0.5;
     float offsetY = frameSize.y * scale + shadowOffsetY;
     vec2 worldPos = pos + vec2(offsetX, offsetY) + shadowLocal - u_cameraPos;
-    // Fade shadow when sprite is high (farther from ground)
-    v_alpha = clamp(1.0 - bobOffset * 0.03, 0.5, 1.0);
+    // Fade shadow when sprite is high (farther from ground), multiplied by shadowAlpha
+    v_alpha = clamp(1.0 - bobOffset * 0.03, 0.5, 1.0) * shadowAlpha;
     vec3 projected = u_projection * vec3(worldPos, 1.0);
     gl_Position = vec4(projected.xy, 0.0, 1.0);
   } else {

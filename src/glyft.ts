@@ -80,6 +80,8 @@ interface InternalSprite {
   // Per-sprite mode override (null = use global config)
   spriteMode: '4dir' | '8dir' | '2dir-side' | '2dir-top' | '1dir' | 'iso4' | 'iso8' | null;
   shadowOffsetY: number;
+  shadowScale: number;
+  shadowAlpha: number;
   glow: number;
   glowColor: number | null;
   glowRadius: number;
@@ -1073,6 +1075,8 @@ export class GlyftEngine {
       bobSpeed: 1.5,
       shadow: false,
       shadowOffsetY: 0,
+      shadowScale: 1.0,
+      shadowAlpha: 0.5,
       physics: false,
       autoFlip: false,
       spriteMode: null,
@@ -1205,6 +1209,10 @@ export class GlyftEngine {
       set shadow(v: boolean) { sprite.shadow = v; },
       get shadowOffsetY() { return sprite.shadowOffsetY; },
       set shadowOffsetY(v: number) { sprite.shadowOffsetY = v; },
+      get shadowScale() { return sprite.shadowScale; },
+      set shadowScale(v: number) { sprite.shadowScale = Math.min(2, Math.max(0, v)); },
+      get shadowAlpha() { return sprite.shadowAlpha; },
+      set shadowAlpha(v: number) { sprite.shadowAlpha = Math.min(1, Math.max(0, v)); },
       get glow() { return sprite.glow; },
       set glow(v: number) { sprite.glow = Math.min(1, Math.max(0, v)); },
       get glowColor() { return sprite.glowColor; },
@@ -2609,8 +2617,8 @@ export class GlyftEngine {
     const gl = this.gl;
 
     // Build instance data
-    // Per-instance: posVel(4) + frame(4) + props(4) + anim(4) + glow(4) = 20 floats = 80 bytes
-    const FLOATS_PER_INSTANCE = 20;
+    // Per-instance: posVel(4) + frame(4) + props(4) + anim(4) + glow(4) + shadow(4) = 24 floats = 96 bytes
+    const FLOATS_PER_INSTANCE = 24;
     const instanceData = new Float32Array(sprites.length * FLOATS_PER_INSTANCE);
     let hasShadows = false;
     let hasGlow = false;
@@ -2706,6 +2714,12 @@ export class GlyftEngine {
       instanceData[offset + 17] = this._glowColorF32[0];
       instanceData[offset + 18] = sprite.glowRadius;
       instanceData[offset + 19] = sprite.shadowOffsetY;
+
+      // a_shadow: scale, alpha, unused, unused
+      instanceData[offset + 20] = sprite.shadowScale;
+      instanceData[offset + 21] = sprite.shadowAlpha;
+      instanceData[offset + 22] = 0;  // Reserved
+      instanceData[offset + 23] = 0;  // Reserved
     }
 
     // Bind VAO and update instance buffer
@@ -2741,6 +2755,11 @@ export class GlyftEngine {
     gl.enableVertexAttribArray(5);
     gl.vertexAttribPointer(5, 4, gl.FLOAT, false, BYTES_PER_INSTANCE, 64);
     gl.vertexAttribDivisor(5, 1);
+
+    // a_shadow (location 6)
+    gl.enableVertexAttribArray(6);
+    gl.vertexAttribPointer(6, 4, gl.FLOAT, false, BYTES_PER_INSTANCE, 80);
+    gl.vertexAttribDivisor(6, 1);
 
     // Bind atlas texture
     gl.activeTexture(gl.TEXTURE0);

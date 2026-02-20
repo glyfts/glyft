@@ -591,6 +591,22 @@ export interface Sprite {
   shadowOffsetY: number;
 
   /**
+   * Shadow scale multiplier (0.0-2.0).
+   * Controls shadow size relative to sprite. 1.0 = normal, 0.5 = half size.
+   * Useful for elevation effects - smaller shadow when sprite is higher.
+   * @default 1.0
+   */
+  shadowScale: number;
+
+  /**
+   * Shadow opacity (0.0-1.0).
+   * Controls shadow darkness. 1.0 = full opacity, 0.0 = invisible.
+   * Useful for elevation effects - lighter shadow when sprite is higher.
+   * @default 0.5
+   */
+  shadowAlpha: number;
+
+  /**
    * Glow intensity from 0 (off) to 1 (full).
    * GPU-driven additive glow rendered behind the sprite.
    */
