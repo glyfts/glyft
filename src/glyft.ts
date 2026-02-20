@@ -159,6 +159,7 @@ export class GlyftEngine {
   private _running = false;
   private _lastFrameTime = 0;
   private _updateCallbacks: ((dt: number) => void)[] = [];
+  private _postRenderCallbacks: ((dt: number) => void)[] = [];
 
   // Rendering
   private _spriteShader!: ShaderProgram;  // TODO: use for sprite rendering
@@ -1745,6 +1746,11 @@ export class GlyftEngine {
     this._updateCallbacks.push(callback);
   }
 
+  /** Register a callback to run after rendering (camera position is final). */
+  onPostRender(callback: (dt: number) => void): void {
+    this._postRenderCallbacks.push(callback);
+  }
+
   start(): void {
     this._running = true;
     this._lastFrameTime = performance.now();
@@ -1914,6 +1920,11 @@ export class GlyftEngine {
 
     // Render
     this._render();
+
+    // Post-render callbacks (camera position is final)
+    for (const callback of this._postRenderCallbacks) {
+      callback(this._dt);
+    }
 
     // Next frame
     requestAnimationFrame(this._loop);
