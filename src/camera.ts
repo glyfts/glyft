@@ -8,6 +8,9 @@ interface InternalSprite {
   x: number;
   y: number;
   exists: boolean;
+  atlas: {
+    frames: Map<string, { x: number; y: number; w: number; h: number }>;
+  };
 }
 
 export class CameraImpl implements Camera {
@@ -50,8 +53,14 @@ export class CameraImpl implements Camera {
   update(dt: number): void {
     const target = this._targetId ? this._sprites.get(this._targetId) : null;
     if (target && target.exists) {
-      const targetX = target.x - this._viewport[0] / 2;
-      const targetY = target.y - this._viewport[1] / 2;
+      // Get sprite frame dimensions to center on sprite's visual center
+      const firstFrame = target.atlas?.frames?.values().next().value;
+      const frameW = firstFrame?.w ?? 0;
+      const frameH = firstFrame?.h ?? 0;
+
+      // Center camera on sprite center (not top-left corner)
+      const targetX = target.x + frameW / 2 - this._viewport[0] / 2;
+      const targetY = target.y + frameH / 2 - this._viewport[1] / 2;
 
       // Smooth follow
       const t = 1 - Math.pow(1 - this._smoothing, dt * 60);
