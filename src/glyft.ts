@@ -43,6 +43,7 @@ import { createHpBarManager, type HpBarManager } from './hpbars';
 import { createParticleManager, type ParticleManager } from './particles';
 import { createArcEffectManager, type ArcEffectManager, type ArcEffectDef, type ArcEmitOptions } from './arcs';
 import { createRingEffectManager, type RingEffectManager, type RingEffectDef, type RingEmitOptions } from './rings';
+import { createDomTextManager, type DomTextManager } from './domtext';
 import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
 import { backgroundVertexShader, backgroundFragmentShader } from './shaders/background';
 
@@ -190,6 +191,7 @@ export class GlyftEngine {
   private _particleManager!: ParticleManager;
   private _arcManager!: ArcEffectManager;
   private _ringManager!: RingEffectManager;
+  private _domTextManager: DomTextManager | null = null;
 
   // Overlay (lazy init — only created when game.overlay is accessed)
   private _overlayCanvas: HTMLCanvasElement | null = null;
@@ -1620,9 +1622,40 @@ export class GlyftEngine {
     this._tweenManager.cancelAll(target as Record<string, unknown>);
   }
 
-  /** Spawn floating text at world position */
+  /** Spawn floating text at world position (GPU-rendered) */
   floatText(x: number, y: number, text: string, options?: import('./types').FloatTextOptions): void {
     this._floatTextManager.spawn(x, y, text, this._time, options);
+  }
+
+  /**
+   * DOM-based floating text system for crisp text at any scale.
+   *
+   * Unlike floatText() which uses GPU rendering, domText uses CSS-animated
+   * DOM elements. This provides pixel-perfect text but requires the container
+   * to be attached to the DOM.
+   *
+   * Usage:
+   * ```ts
+   * // Attach container to your game wrapper
+   * wrapper.appendChild(game.domText.container);
+   *
+   * // Spawn text
+   * game.domText.spawn(x, y, '+10 XP', { color: 0xffff00, style: 'rise' });
+   * ```
+   */
+  get domText() {
+    if (!this._domTextManager) {
+      this._domTextManager = createDomTextManager();
+    }
+    const manager = this._domTextManager;
+    return {
+      /** The container element - attach to your game wrapper */
+      get container() { return manager.getContainer(); },
+      /** Spawn floating text at world coordinates */
+      spawn(x: number, y: number, text: string, options?: import('./types').FloatTextOptions) {
+        manager.spawn(x, y, text, options);
+      },
+    };
   }
 
   /** Particle system: define emitters and emit bursts */
@@ -1934,6 +1967,19 @@ export class GlyftEngine {
 
     // Update floating text (expire old entries)
     this._floatTextManager.update(this._time);
+
+    // Update DOM text (if used)
+    if (this._domTextManager) {
+      const [vpW, vpH] = this.config.settings.viewport;
+      this._domTextManager.update(
+        this._dt,
+        this._camera,
+        vpW,
+        vpH,
+        this.canvas.clientWidth,
+        this.canvas.clientHeight
+      );
+    }
 
     // Update particles (expire dead particles)
     this._particleManager.update(this._time);
