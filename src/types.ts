@@ -867,6 +867,10 @@ export interface Camera {
   clearBounds(): void;
   /** Shake the camera */
   shake(intensity: number, duration: number): void;
+  /** Update viewport dimensions (for dynamic resize) */
+  setViewport(width: number, height: number): void;
+  /** Get current viewport dimensions */
+  getViewport(): [number, number];
 }
 
 /** Input manager */

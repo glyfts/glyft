@@ -18,6 +18,8 @@ export interface SoundManager {
   setVolume(volume: number): void;
   /** Preload sounds */
   preload(sounds: string[]): Promise<void>;
+  /** Update viewport width for stereo panning (for dynamic resize) */
+  setViewportWidth(width: number): void;
 }
 
 /** Resolve a value that may be a number or a [min, max] range */
@@ -49,7 +51,10 @@ interface ParsedRule {
 /**
  * Create the sound manager.
  */
-export function createSoundManager(viewportWidth: number): SoundManager {
+export function createSoundManager(initialViewportWidth: number): SoundManager {
+  // Viewport width for stereo panning (mutable for resize)
+  let viewportWidth = initialViewportWidth;
+
   // Audio context (created on first interaction)
   let ctx: AudioContext | null = null;
   let masterGain: GainNode | null = null;
@@ -348,6 +353,13 @@ export function createSoundManager(viewportWidth: number): SoundManager {
 
     async preload(soundUrls: string[]): Promise<void> {
       await Promise.all(soundUrls.map((url) => loadSound(url)));
+    },
+
+    /**
+     * Update viewport width for stereo panning calculations (for dynamic resize).
+     */
+    setViewportWidth(width: number): void {
+      viewportWidth = width;
     },
   };
 }

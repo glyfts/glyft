@@ -50,6 +50,20 @@ export class CameraImpl implements Camera {
     // TODO: implement camera shake
   }
 
+  /**
+   * Update the viewport dimensions (for dynamic resize).
+   */
+  setViewport(width: number, height: number): void {
+    this._viewport = [width, height];
+  }
+
+  /**
+   * Get the current viewport dimensions.
+   */
+  getViewport(): [number, number] {
+    return this._viewport;
+  }
+
   update(dt: number): void {
     const target = this._targetId ? this._sprites.get(this._targetId) : null;
     if (target && target.exists) {

@@ -479,6 +479,35 @@ export class GlyftEngine {
     return this._overlayCtx!;
   }
 
+  /**
+   * Get current viewport dimensions.
+   */
+  get viewport(): [number, number] {
+    return this.config.settings.viewport;
+  }
+
+  /**
+   * Update viewport dimensions at runtime.
+   * Use this when the game canvas needs to show more or less area
+   * (e.g., switching between portrait and landscape orientation).
+   */
+  setViewport(width: number, height: number): void {
+    // Update config
+    this.config.settings.viewport = [width, height];
+
+    // Update camera
+    this._camera.setViewport(width, height);
+
+    // Update input scaling
+    this._input.setViewport(width, height);
+
+    // Update sound manager for stereo panning
+    this._soundManager.setViewportWidth(width);
+
+    // Re-initialize overlay canvas with new dimensions
+    this._initOverlay();
+  }
+
   // ---------------------------------------------------------------------------
   // Asset Loading
   // ---------------------------------------------------------------------------
