@@ -87,6 +87,10 @@ export type { NetworkAdapter as INetworkAdapter } from './network';
 export { createTerrainSystem } from './terrain';
 export type { TerrainConfig, Camera3D, TerrainSystem } from './terrain';
 
+// Billboard sprite system
+export { createBillboardSystem } from './billboard';
+export type { BillboardSprite, BillboardAtlas, BillboardSystem } from './billboard';
+
 // 3D math utilities
 export { vec3, mat4Perspective, mat4LookAt, mat4Multiply, project } from './math3d';
 export type { Vec3, Mat4 } from './math3d';
