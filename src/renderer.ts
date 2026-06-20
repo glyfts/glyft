@@ -38,7 +38,7 @@ export interface ShaderProgram {
  * const gl = createContext(document.getElementById('game') as HTMLCanvasElement);
  * ```
  */
-export function createContext(canvas: HTMLCanvasElement, options?: { depth?: boolean }): WebGL2RenderingContext {
+export function createContext(canvas: HTMLCanvasElement, options?: { depth?: boolean; alpha?: boolean }): WebGL2RenderingContext {
   if (!canvas) {
     throw new GlyftError(
       'Canvas element is null or undefined',
@@ -59,7 +59,7 @@ export function createContext(canvas: HTMLCanvasElement, options?: { depth?: boo
   }
 
   const gl = canvas.getContext('webgl2', {
-    alpha: false,
+    alpha: options?.alpha ?? false,
     antialias: false,
     depth: options?.depth ?? false,
     stencil: false,

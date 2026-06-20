@@ -263,7 +263,7 @@ export class GlyftEngine {
     this.config = config;
 
     // Initialize WebGL
-    this.gl = createContext(canvas, { depth: config.settings.depth });
+    this.gl = createContext(canvas, { depth: config.settings.depth, alpha: config.settings.alpha });
     this._initShaders();
     this._initBuffers();
 
@@ -354,7 +354,7 @@ export class GlyftEngine {
     const r = ((bg >> 16) & 0xff) / 255;
     const g = ((bg >> 8) & 0xff) / 255;
     const b = (bg & 0xff) / 255;
-    this.gl.clearColor(r, g, b, 1);
+    this.gl.clearColor(r, g, b, config.settings.alpha ? 0 : 1);
 
     // Enable blending for sprite transparency
     this.gl.enable(this.gl.BLEND);

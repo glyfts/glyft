@@ -119,6 +119,13 @@ export interface GlyftSettings {
    * @default false
    */
   depth?: boolean;
+
+  /**
+   * Enable alpha channel for transparent canvas.
+   * When true, the canvas background is transparent, useful for overlays.
+   * @default false
+   */
+  alpha?: boolean;
 }
 
 /** Stat definition */
