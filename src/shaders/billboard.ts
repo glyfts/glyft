@@ -81,9 +81,10 @@ void main() {
   bool flipX = (flags & 2u) != 0u;
 
   // Direction based on facing angle relative to camera
+  // cameraAngle - facing: when sprite faces toward camera, angle ≈ 0 → row 0 (down/front)
   vec3 toCamera = u_cameraPos - worldPos;
   float cameraAngle = atan(toCamera.x, toCamera.z);
-  float relAngle = facing - cameraAngle;
+  float relAngle = cameraAngle - facing;
 
   int direction;
   if (u_spriteMode == 1) {
