@@ -83,5 +83,13 @@ export type { RingEffectDef, RingEmitOptions } from './rings';
 // Re-export from network for convenience
 export type { NetworkAdapter as INetworkAdapter } from './network';
 
+// 3D terrain subsystem
+export { createTerrainSystem } from './terrain';
+export type { TerrainConfig, Camera3D, TerrainSystem } from './terrain';
+
+// 3D math utilities
+export { vec3, mat4Perspective, mat4LookAt, mat4Multiply, project } from './math3d';
+export type { Vec3, Mat4 } from './math3d';
+
 // Re-export helpers for convenience (also available as 'glyft/helpers')
 export * from './helpers';

@@ -263,7 +263,7 @@ export class GlyftEngine {
     this.config = config;
 
     // Initialize WebGL
-    this.gl = createContext(canvas);
+    this.gl = createContext(canvas, { depth: config.settings.depth });
     this._initShaders();
     this._initBuffers();
 

@@ -111,6 +111,14 @@ export interface GlyftSettings {
    * @default 5
    */
   depthSortInterval?: number;
+
+  /**
+   * Enable depth buffer for 3D terrain rendering.
+   * When true, the WebGL context is created with a depth buffer.
+   * Required when using the terrain subsystem.
+   * @default false
+   */
+  depth?: boolean;
 }
 
 /** Stat definition */
