@@ -78,6 +78,10 @@ export interface TerrainSystem {
   projectToScreen(pos: Vec3, viewportW: number, viewportH: number): [number, number, number] | null;
   /** Get terrain dimensions in world units */
   getWorldSize(): [number, number];
+  /** Modify heightmap and rebuild mesh. Callback receives the heightmap array for mutation. */
+  modifyHeightmap(fn: (heightmap: number[][]) => void): void;
+  /** Get the raw heightmap data (for export) */
+  getHeightmap(): number[][];
   /** Destroy GPU resources */
   destroy(): void;
 }
@@ -91,34 +95,22 @@ interface TerrainMesh {
   indexBuffer: WebGLBuffer;
 }
 
-function buildTerrainMesh(
-  gl: WebGL2RenderingContext,
-  heightmap: number[][],
-  cellSize: number,
-  maxHeight: number,
-  textureRepeat: number,
-): TerrainMesh {
+function generateTerrainVertices(
+  heightmap: number[][], cellSize: number, maxHeight: number, textureRepeat: number,
+): Float32Array {
   const rows = heightmap.length;
   const cols = heightmap[0].length;
+  const vertices = new Float32Array(rows * cols * 8);
 
-  // Vertex layout: position (3) + normal (3) + uv (2) = 8 floats per vertex
-  const vertexCount = rows * cols;
-  const vertices = new Float32Array(vertexCount * 8);
-
-  // Generate vertices
   for (let z = 0; z < rows; z++) {
     for (let x = 0; x < cols; x++) {
       const idx = (z * cols + x) * 8;
       const worldX = x * cellSize;
       const worldZ = z * cellSize;
       const height = heightmap[z][x] * maxHeight;
-
-      // Position
       vertices[idx] = worldX;
       vertices[idx + 1] = height;
       vertices[idx + 2] = worldZ;
-
-      // Normal (computed from finite differences)
       const hL = x > 0 ? heightmap[z][x - 1] * maxHeight : height;
       const hR = x < cols - 1 ? heightmap[z][x + 1] * maxHeight : height;
       const hD = z > 0 ? heightmap[z - 1][x] * maxHeight : height;
@@ -130,12 +122,24 @@ function buildTerrainMesh(
       vertices[idx + 3] = nx / len;
       vertices[idx + 4] = ny / len;
       vertices[idx + 5] = nz / len;
-
-      // UV (tiled)
       vertices[idx + 6] = (x / (cols - 1)) * textureRepeat;
       vertices[idx + 7] = (z / (rows - 1)) * textureRepeat;
     }
   }
+  return vertices;
+}
+
+function buildTerrainMesh(
+  gl: WebGL2RenderingContext,
+  heightmap: number[][],
+  cellSize: number,
+  maxHeight: number,
+  textureRepeat: number,
+): TerrainMesh {
+  const rows = heightmap.length;
+  const cols = heightmap[0].length;
+
+  const vertices = generateTerrainVertices(heightmap, cellSize, maxHeight, textureRepeat);
 
   // Generate indices (two triangles per cell)
   const cellRows = rows - 1;
@@ -169,7 +173,7 @@ function buildTerrainMesh(
 
   const vertexBuffer = gl.createBuffer()!;
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
 
   // Position (location 0)
   gl.enableVertexAttribArray(0);
@@ -388,6 +392,20 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       const ny = 2 * d;
       const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
       return [nx / len, ny / len, nz / len];
+    },
+
+    modifyHeightmap(fn: (hm: number[][]) => void) {
+      fn(heightmap);
+      // Regenerate vertices and re-upload
+      const newVerts = generateTerrainVertices(heightmap, cellSize, maxHeight, textureRepeat);
+      gl.bindVertexArray(mesh.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vertexBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, newVerts);
+      gl.bindVertexArray(null);
+    },
+
+    getHeightmap(): number[][] {
+      return heightmap;
     },
 
     isWater(worldX: number, worldZ: number): boolean {
