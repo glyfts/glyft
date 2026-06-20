@@ -14,11 +14,13 @@ import type { Camera3D } from './terrain';
 // ---- Types ----
 
 export interface MeshPart {
-  type: 'box' | 'roof';
+  type: 'box' | 'roof' | 'wedge';
   position: [number, number, number];
   size: [number, number, number]; // width(x), height(y), depth(z)
   rotation?: number;
   faces: Record<string, number>; // face name → tile index
+  /** For wedge: which direction the ramp descends toward. 'north'|'south'|'east'|'west' */
+  direction?: 'north' | 'south' | 'east' | 'west';
 }
 
 export interface BuildingDef {
@@ -147,6 +149,63 @@ function generateRoof(
 
 // ---- Model Matrix ----
 
+function generateWedge(
+  verts: number[],
+  ox: number, oy: number, oz: number,
+  w: number, h: number, d: number,
+  faces: Record<string, number>,
+  direction: string,
+  tilesPerRow: number, tileSize: number, atlasSize: number,
+) {
+  const hw = w / 2, hd = d / 2;
+  const x0 = ox - hw, x1 = ox + hw;
+  const y0 = oy;
+  const y1 = oy + h;
+  const z0 = oz - hd, z1 = oz + hd;
+
+  const getUV = (face: string) => tileUV(faces[face] ?? 0, tilesPerRow, tileSize, atlasSize);
+
+  // The wedge has full height on the "high" side and zero on the "low" side
+  // direction = which way the ramp goes down
+  // Default 'south': high side at north (z0), ramp descends toward south (z1)
+
+  if (direction === 'south' || !direction) {
+    // High wall at north (z0), ramp descends to south (z1)
+    const slopeNorm = vec3Normalize([0, d, h]);
+    // Ramp surface
+    pushQuad(verts, [x0, y0, z1], [x1, y0, z1], [x1, y1, z0], [x0, y1, z0], slopeNorm, getUV('slope'));
+    // High wall (north)
+    pushQuad(verts, [x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [0, 0, -1], getUV('front'));
+    // Left side triangle
+    pushTriangle(verts, [x0, y1, z0], [x0, y0, z0], [x0, y0, z1], [-1, 0, 0], getUV('side'));
+    // Right side triangle
+    pushTriangle(verts, [x1, y1, z0], [x1, y0, z1], [x1, y0, z0], [1, 0, 0], getUV('side'));
+    // Bottom
+    pushQuad(verts, [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0], getUV('bottom'));
+  } else if (direction === 'north') {
+    const slopeNorm = vec3Normalize([0, d, -h]);
+    pushQuad(verts, [x1, y0, z0], [x0, y0, z0], [x0, y1, z1], [x1, y1, z1], slopeNorm, getUV('slope'));
+    pushQuad(verts, [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [0, 0, 1], getUV('front'));
+    pushTriangle(verts, [x0, y1, z1], [x0, y0, z1], [x0, y0, z0], [-1, 0, 0], getUV('side'));
+    pushTriangle(verts, [x1, y1, z1], [x1, y0, z0], [x1, y0, z1], [1, 0, 0], getUV('side'));
+    pushQuad(verts, [x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [0, -1, 0], getUV('bottom'));
+  } else if (direction === 'east') {
+    const slopeNorm = vec3Normalize([-h, w, 0]);
+    pushQuad(verts, [x0, y0, z0], [x0, y0, z1], [x1, y1, z1], [x1, y1, z0], slopeNorm, getUV('slope'));
+    pushQuad(verts, [x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [1, 0, 0], getUV('front'));
+    pushTriangle(verts, [x1, y1, z0], [x1, y0, z0], [x0, y0, z0], [0, 0, -1], getUV('side'));
+    pushTriangle(verts, [x1, y1, z1], [x0, y0, z1], [x1, y0, z1], [0, 0, 1], getUV('side'));
+    pushQuad(verts, [x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [0, -1, 0], getUV('bottom'));
+  } else if (direction === 'west') {
+    const slopeNorm = vec3Normalize([h, w, 0]);
+    pushQuad(verts, [x1, y0, z1], [x1, y0, z0], [x0, y1, z0], [x0, y1, z1], slopeNorm, getUV('slope'));
+    pushQuad(verts, [x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [-1, 0, 0], getUV('front'));
+    pushTriangle(verts, [x0, y1, z0], [x0, y0, z0], [x1, y0, z0], [0, 0, -1], getUV('side'));
+    pushTriangle(verts, [x0, y1, z1], [x1, y0, z1], [x0, y0, z1], [0, 0, 1], getUV('side'));
+    pushQuad(verts, [x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [0, -1, 0], getUV('bottom'));
+  }
+}
+
 function modelMatrix(x: number, y: number, z: number, rotation: number): Mat4 {
   const c = Math.cos(rotation);
   const s = Math.sin(rotation);
@@ -194,6 +253,8 @@ export function createMeshSystem(
           generateBox(verts, px, py, pz, w, h, d, part.faces, tilesPerRow, tileSize, atlas.width);
         } else if (part.type === 'roof') {
           generateRoof(verts, px, py, pz, w, h, d, part.faces, tilesPerRow, tileSize, atlas.width);
+        } else if (part.type === 'wedge') {
+          generateWedge(verts, px, py, pz, w, h, d, part.faces, part.direction || 'south', tilesPerRow, tileSize, atlas.width);
         }
         maxHW = Math.max(maxHW, Math.abs(px) + w / 2);
         maxHD = Math.max(maxHD, Math.abs(pz) + d / 2);
