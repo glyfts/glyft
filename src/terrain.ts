@@ -18,6 +18,7 @@ import {
   type Mat4,
 } from './math3d';
 import { terrainVertexShader, terrainFragmentShader } from './shaders/terrain';
+import { waterVertexShader, waterFragmentShader } from './shaders/water';
 
 // ---- Types ----
 
@@ -43,6 +44,8 @@ export interface TerrainConfig {
     /** High elevations (default: snow) */
     high: WebGLTexture;
   };
+  /** Water surface height in world units. Set to render a water plane. */
+  waterHeight?: number;
 }
 
 export interface Camera3D {
@@ -65,6 +68,8 @@ export interface TerrainSystem {
   getHeight(worldX: number, worldZ: number): number;
   /** Get terrain normal at world position (for slope-conforming shadows) */
   getNormal(worldX: number, worldZ: number): Vec3;
+  /** Check if a world position is underwater */
+  isWater(worldX: number, worldZ: number): boolean;
   /** Get the current MVP matrix (for projecting sprites) */
   getMVP(): Mat4;
   /** Get the current view-projection matrix */
@@ -223,7 +228,7 @@ function sampleHeight(heightmap: number[][], cellSize: number, maxHeight: number
 // ---- Create Terrain System ----
 
 export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainConfig): TerrainSystem {
-  const { heightmap, cellSize, maxHeight, texture, textureRepeat = 8, splatTextures } = config;
+  const { heightmap, cellSize, maxHeight, texture, textureRepeat = 8, splatTextures, waterHeight } = config;
 
   const shader = compileShader(
     gl,
@@ -245,6 +250,29 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
   const cols = heightmap[0].length;
   const worldWidth = (cols - 1) * cellSize;
   const worldDepth = (rows - 1) * cellSize;
+
+  // Water plane setup
+  let waterShader: ReturnType<typeof compileShader> | null = null;
+  let waterVAO: WebGLVertexArrayObject | null = null;
+  let waterVBO: WebGLBuffer | null = null;
+
+  if (waterHeight != null) {
+    waterShader = compileShader(gl, waterVertexShader, waterFragmentShader,
+      ['u_mvp', 'u_worldSize', 'u_waterHeight', 'u_time', 'u_cameraPos', 'u_fogColor', 'u_fogNear', 'u_fogFar'],
+      ['a_position'],
+    );
+    const quadVerts = new Float32Array([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1]);
+    waterVAO = gl.createVertexArray()!;
+    gl.bindVertexArray(waterVAO);
+    waterVBO = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, waterVBO);
+    gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+  }
+
+  let startTime = 0;
 
   // Cached matrices
   let cachedMVP: Mat4 = new Float32Array(16);
@@ -319,6 +347,29 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       gl.bindVertexArray(mesh.vao);
       gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_INT, 0);
       gl.bindVertexArray(null);
+
+      // Draw water plane
+      if (waterShader && waterVAO && waterHeight != null) {
+        if (startTime === 0) startTime = performance.now() / 1000;
+        const time = performance.now() / 1000 - startTime;
+
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+        gl.useProgram(waterShader.program);
+        gl.uniformMatrix4fv(waterShader.uniforms.u_mvp, false, vp);
+        gl.uniform2f(waterShader.uniforms.u_worldSize, worldWidth, worldDepth);
+        gl.uniform1f(waterShader.uniforms.u_waterHeight, waterHeight);
+        gl.uniform1f(waterShader.uniforms.u_time, time);
+        gl.uniform3fv(waterShader.uniforms.u_cameraPos, camera.position);
+        gl.uniform3f(waterShader.uniforms.u_fogColor, 0.6, 0.7, 0.85);
+        gl.uniform1f(waterShader.uniforms.u_fogNear, camera.far * 0.5);
+        gl.uniform1f(waterShader.uniforms.u_fogFar, camera.far);
+
+        gl.bindVertexArray(waterVAO);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.bindVertexArray(null);
+      }
     },
 
     getHeight(worldX: number, worldZ: number): number {
@@ -336,6 +387,11 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       const ny = 2 * d;
       const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
       return [nx / len, ny / len, nz / len];
+    },
+
+    isWater(worldX: number, worldZ: number): boolean {
+      if (waterHeight == null) return false;
+      return sampleHeight(heightmap, cellSize, maxHeight, worldX, worldZ) < waterHeight;
     },
 
     getMVP(): Mat4 {
@@ -359,6 +415,9 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       gl.deleteBuffer(mesh.vertexBuffer);
       gl.deleteBuffer(mesh.indexBuffer);
       gl.deleteProgram(shader.program);
+      if (waterVAO) gl.deleteVertexArray(waterVAO);
+      if (waterVBO) gl.deleteBuffer(waterVBO);
+      if (waterShader) gl.deleteProgram(waterShader.program);
     },
   };
 }
