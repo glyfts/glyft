@@ -42,6 +42,8 @@ export interface MeshSystem {
   render(camera: Camera3D, vp: Mat4, viewportW: number, viewportH: number): void;
   /** Check if a world position is inside any building footprint */
   isBlocked(worldX: number, worldZ: number): boolean;
+  /** Get the roof height at a world position, or null if not over a building */
+  getTopHeight(worldX: number, worldZ: number): number | null;
   destroy(): void;
 }
 
@@ -224,7 +226,8 @@ interface CompiledBuilding {
   vao: WebGLVertexArrayObject;
   vertexCount: number;
   buffer: WebGLBuffer;
-  footprint: { hw: number; hd: number }; // Half-width and half-depth for collision
+  footprint: { hw: number; hd: number };
+  topHeight: number; // Max Y extent of building (for roof landing)
 }
 
 export function createMeshSystem(
@@ -244,7 +247,7 @@ export function createMeshSystem(
   return {
     defineBuilding(id: string, parts: MeshPart[]) {
       const verts: number[] = [];
-      let maxHW = 0, maxHD = 0;
+      let maxHW = 0, maxHD = 0, topH = 0;
 
       for (const part of parts) {
         const [px, py, pz] = part.position;
@@ -257,6 +260,7 @@ export function createMeshSystem(
           generateWedge(verts, px, py, pz, w, h, d, part.faces, part.direction || 'south', tilesPerRow, tileSize, atlas.width);
         }
         maxHW = Math.max(maxHW, Math.abs(px) + w / 2);
+        topH = Math.max(topH, py + h);
         maxHD = Math.max(maxHD, Math.abs(pz) + d / 2);
       }
 
@@ -278,7 +282,7 @@ export function createMeshSystem(
 
       gl.bindVertexArray(null);
 
-      buildings.set(id, { vao, vertexCount: verts.length / FLOATS_PER_VERTEX, buffer, footprint: { hw: maxHW, hd: maxHD } });
+      buildings.set(id, { vao, vertexCount: verts.length / FLOATS_PER_VERTEX, buffer, footprint: { hw: maxHW, hd: maxHD }, topHeight: topH });
     },
 
     placeBuildings(insts: BuildingInstance[]) {
@@ -337,6 +341,23 @@ export function createMeshSystem(
         }
       }
       return false;
+    },
+
+    getTopHeight(worldX: number, worldZ: number): number | null {
+      for (const inst of instances) {
+        const building = buildings.get(inst.defId);
+        if (!building) continue;
+        const c = Math.cos(-inst.rotation);
+        const s = Math.sin(-inst.rotation);
+        const dx = worldX - inst.x;
+        const dz = worldZ - inst.z;
+        const localX = dx * c - dz * s;
+        const localZ = dx * s + dz * c;
+        if (Math.abs(localX) < building.footprint.hw && Math.abs(localZ) < building.footprint.hd) {
+          return inst.y + building.topHeight;
+        }
+      }
+      return null;
     },
 
     destroy() {
