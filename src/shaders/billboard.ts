@@ -52,14 +52,14 @@ vec3 unpackTint(float packed) {
 // angle = sprite facing relative to camera (0 = facing camera, PI = facing away)
 int getDirection4(float angle) {
   // Remap: 0=down(toward cam), 1=right, 2=up(away), 3=left
-  float a = mod(angle + 3.14159265, 6.28318530) / 6.28318530; // 0..1
+  float a = mod(angle + 6.28318530, 6.28318530) / 6.28318530; // 0..1
   int idx = int(a * 4.0 + 0.5) % 4;
   return idx;
 }
 
 // Get direction row for 8dir
 int getDirection8(float angle) {
-  float a = mod(angle + 3.14159265, 6.28318530) / 6.28318530;
+  float a = mod(angle + 6.28318530, 6.28318530) / 6.28318530;
   int idx = int(a * 8.0 + 0.5) % 8;
   return idx;
 }
