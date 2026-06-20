@@ -86,7 +86,9 @@ void main() {
   float relAngle = facing - cameraAngle;
 
   int direction;
-  if (u_spriteMode == 1) {
+  if (u_spriteMode == 2) {
+    direction = 0; // 1dir: always row 0
+  } else if (u_spriteMode == 1) {
     direction = getDirection8(relAngle);
   } else {
     direction = getDirection4(relAngle);

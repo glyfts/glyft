@@ -99,7 +99,7 @@ const MAX_SPRITES = 4096;
 
 // ---- Create Billboard System ----
 
-export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4dir' | '8dir' = '4dir'): BillboardSystem {
+export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4dir' | '8dir' | '1dir' = '4dir'): BillboardSystem {
   const shader = compileShader(
     gl,
     billboardVertexShader,
@@ -280,7 +280,7 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
       gl.uniform3fv(shader.uniforms.u_cameraUp, worldUp); // Use world up for upright billboards
       gl.uniform1f(shader.uniforms.u_time, time);
       gl.uniform2f(shader.uniforms.u_atlasSize, atlas.width, atlas.height);
-      gl.uniform1i(shader.uniforms.u_spriteMode, spriteMode === '8dir' ? 1 : 0);
+      gl.uniform1i(shader.uniforms.u_spriteMode, spriteMode === '8dir' ? 1 : spriteMode === '1dir' ? 2 : 0);
 
       // Fog
       if (fog) {
