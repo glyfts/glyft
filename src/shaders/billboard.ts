@@ -77,6 +77,8 @@ void main() {
   float fps = a_anim.z;
   uint flags = floatBitsToUint(a_anim.w);
   bool flipX = (flags & 2u) != 0u;
+  float bobAmplitude = float((flags >> 12u) & 0xFFu) * 0.01;
+  float bobSpeed = float((flags >> 20u) & 0xFFu) * 0.1;
 
   // Direction
   vec3 toCamera = u_cameraPos - worldPos;
@@ -139,8 +141,12 @@ void main() {
     v_fogDist = distance(worldPos, u_cameraPos);
     gl_Position = u_viewProj * vec4(shadowPos, 1.0);
   } else {
-    // Normal billboard: camera-facing quad, offset down by groundOffset
-    vec3 spriteOrigin = worldPos - vec3(0.0, groundOffset, 0.0);
+    // Normal billboard: camera-facing quad, offset down by groundOffset + bob
+    float bobOffset = 0.0;
+    if (bobAmplitude > 0.0) {
+      bobOffset = sin(u_time * bobSpeed * 6.28318) * bobAmplitude;
+    }
+    vec3 spriteOrigin = worldPos - vec3(0.0, groundOffset, 0.0) + vec3(0.0, bobOffset, 0.0);
     vec2 local = a_position - vec2(0.5, 1.0);
     local *= frameSize * scale * spriteHeight;
 

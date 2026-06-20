@@ -56,6 +56,10 @@ export interface BillboardSprite {
   fps: number;
   /** Flip X */
   flipX: boolean;
+  /** Vertical bob amplitude in world units (0 = no bob). For floating items. */
+  bob: number;
+  /** Bob speed multiplier (default ~3). */
+  bobSpeed: number;
   /** Animation override: starting frame column (e.g. 5 for sword attack) */
   animOverrideStart: number;
   /** Animation override: number of frames to play */
@@ -221,9 +225,12 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
         instanceData[off + 12] = s.idleFrames;
         instanceData[off + 13] = s.walkFrames;
         instanceData[off + 14] = s.fps;
-        // Pack flags
+        // Pack flags + bob into uint32
         let flags = 0;
         if (s.flipX) flags |= 2;
+        const bobAmp = Math.round(Math.min((s.bob || 0) * 100, 255)) & 0xFF;
+        const bobSpd = Math.round(Math.min((s.bobSpeed || 0) * 10, 255)) & 0xFF;
+        flags |= (bobAmp << 12) | (bobSpd << 20);
         flagsView.setUint32(0, flags, true);
         instanceData[off + 15] = flagsView.getFloat32(0, true);
 
