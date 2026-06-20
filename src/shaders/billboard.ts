@@ -17,7 +17,7 @@ layout(location = 0) in vec2 a_position;
 
 // Per-instance
 layout(location = 1) in vec4 a_worldPos;    // x, y, z, facing (radians)
-layout(location = 2) in vec4 a_velocity;    // vx, vy, vz, speed
+layout(location = 2) in vec4 a_velocity;    // terrainNormalX, groundOffset, terrainNormalZ, speed
 layout(location = 3) in vec4 a_frame;       // u, v, w, h (base frame in atlas)
 layout(location = 4) in vec4 a_anim;        // idleFrames, walkFrames, fps, flags
 layout(location = 5) in vec4 a_props;       // scale, alpha, tint (packed), spriteHeight
@@ -63,6 +63,8 @@ void main() {
   vec3 worldPos = a_worldPos.xyz;
   float facing = a_worldPos.w;
   float speed = a_velocity.w;
+  float groundOffset = a_velocity.y;
+  vec3 terrainNormal = normalize(vec3(a_velocity.x, 1.0, a_velocity.z));
   vec2 frameSize = a_frame.zw;
   float scale = a_props.x;
   v_alpha = a_props.y;
@@ -117,24 +119,32 @@ void main() {
   v_texCoord = (framePos + uv * frameSize) / u_atlasSize;
 
   if (u_shadowPass == 1) {
-    // Shadow: flat ellipse on the ground at sprite's feet
+    // Shadow: ellipse on the terrain surface, oriented to slope
     float shadowW = frameSize.x * scale * spriteHeight * 0.8;
-    float shadowD = shadowW * 0.4; // Foreshortened depth
-    vec2 local = a_position - vec2(0.5, 0.5); // Center
+    float shadowD = shadowW * 0.4;
+    vec2 local = a_position - vec2(0.5, 0.5);
 
-    // Flat on XZ plane (ground)
+    // Build tangent frame from terrain normal
+    vec3 up = terrainNormal;
+    vec3 tangentX = normalize(cross(up, vec3(0.0, 0.0, 1.0)));
+    vec3 tangentZ = normalize(cross(tangentX, up));
+
+    // Shadow conforms to terrain slope
     vec3 shadowPos = worldPos
-      + vec3(local.x * shadowW, 0.05, local.y * shadowD); // Tiny Y offset to avoid z-fight
+      + tangentX * (local.x * shadowW)
+      + tangentZ * (local.y * shadowD)
+      + up * 0.05; // Tiny offset along normal to avoid z-fight
 
     v_alpha = 0.35;
     v_fogDist = distance(worldPos, u_cameraPos);
     gl_Position = u_viewProj * vec4(shadowPos, 1.0);
   } else {
-    // Normal billboard: camera-facing quad
+    // Normal billboard: camera-facing quad, offset down by groundOffset
+    vec3 spriteOrigin = worldPos - vec3(0.0, groundOffset, 0.0);
     vec2 local = a_position - vec2(0.5, 1.0);
     local *= frameSize * scale * spriteHeight;
 
-    vec3 billboardPos = worldPos
+    vec3 billboardPos = spriteOrigin
       + u_cameraRight * local.x
       + u_cameraUp * (-local.y);
 

@@ -42,6 +42,9 @@ export interface BillboardSprite {
   spriteHeight: number;
   /** Vertical anchor offset in world units (positive = push sprite down). Default 0. */
   groundOffset: number;
+  /** Terrain normal at sprite position (for slope-conforming shadows). Default [0,1,0]. */
+  terrainNormalX: number;
+  terrainNormalZ: number;
   /** Sprite sheet frame region in atlas */
   frameX: number;
   frameY: number;
@@ -195,16 +198,17 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
         const s = sprites[i];
         const off = i * FLOATS_PER_INSTANCE;
 
-        // worldPos + facing (apply ground offset to Y)
+        // worldPos + facing (original terrain height, no offset)
         instanceData[off] = s.x;
-        instanceData[off + 1] = s.y - (s.groundOffset || 0);
+        instanceData[off + 1] = s.y;
         instanceData[off + 2] = s.z;
         instanceData[off + 3] = s.facing;
 
-        // velocity
-        instanceData[off + 4] = s.vx;
-        instanceData[off + 5] = s.vy;
-        instanceData[off + 6] = s.vz;
+        // velocity slot: pack terrain normal + groundOffset + speed
+        // x = terrainNormalX, y = groundOffset, z = terrainNormalZ, w = speed
+        instanceData[off + 4] = s.terrainNormalX || 0;
+        instanceData[off + 5] = s.groundOffset || 0;
+        instanceData[off + 6] = s.terrainNormalZ || 0;
         instanceData[off + 7] = s.speed;
 
         // frame

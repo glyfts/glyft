@@ -63,6 +63,8 @@ export interface TerrainSystem {
   render(camera: Camera3D, viewportW: number, viewportH: number): void;
   /** Get terrain height at world position (bilinear interpolation) */
   getHeight(worldX: number, worldZ: number): number;
+  /** Get terrain normal at world position (for slope-conforming shadows) */
+  getNormal(worldX: number, worldZ: number): Vec3;
   /** Get the current MVP matrix (for projecting sprites) */
   getMVP(): Mat4;
   /** Get the current view-projection matrix */
@@ -321,6 +323,19 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
     getHeight(worldX: number, worldZ: number): number {
       return sampleHeight(heightmap, cellSize, maxHeight, worldX, worldZ);
+    },
+
+    getNormal(worldX: number, worldZ: number): Vec3 {
+      const d = cellSize;
+      const hL = sampleHeight(heightmap, cellSize, maxHeight, worldX - d, worldZ);
+      const hR = sampleHeight(heightmap, cellSize, maxHeight, worldX + d, worldZ);
+      const hD = sampleHeight(heightmap, cellSize, maxHeight, worldX, worldZ - d);
+      const hU = sampleHeight(heightmap, cellSize, maxHeight, worldX, worldZ + d);
+      const nx = hL - hR;
+      const nz = hD - hU;
+      const ny = 2 * d;
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      return [nx / len, ny / len, nz / len];
     },
 
     getMVP(): Mat4 {
