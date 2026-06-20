@@ -83,7 +83,7 @@ void main() {
   // Direction
   vec3 toCamera = u_cameraPos - worldPos;
   float cameraAngle = atan(toCamera.x, toCamera.z);
-  float relAngle = cameraAngle - facing;
+  float relAngle = facing - cameraAngle;
 
   int direction;
   if (u_spriteMode == 1) {
