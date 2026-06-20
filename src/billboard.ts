@@ -40,6 +40,8 @@ export interface BillboardSprite {
   tint: number;
   /** World-space height per pixel (controls sprite size in world) */
   spriteHeight: number;
+  /** Vertical anchor offset in world units (positive = push sprite down). Default 0. */
+  groundOffset: number;
   /** Sprite sheet frame region in atlas */
   frameX: number;
   frameY: number;
@@ -98,7 +100,7 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
     [
       'u_viewProj', 'u_cameraPos', 'u_cameraRight', 'u_cameraUp',
       'u_time', 'u_atlasSize', 'u_spriteMode', 'u_atlas',
-      'u_fogColor', 'u_fogNear', 'u_fogFar',
+      'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_shadowPass',
     ],
     ['a_position', 'a_worldPos', 'a_velocity', 'a_frame', 'a_anim', 'a_props', 'a_override'],
   );
@@ -193,9 +195,9 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
         const s = sprites[i];
         const off = i * FLOATS_PER_INSTANCE;
 
-        // worldPos + facing
+        // worldPos + facing (apply ground offset to Y)
         instanceData[off] = s.x;
-        instanceData[off + 1] = s.y;
+        instanceData[off + 1] = s.y - (s.groundOffset || 0);
         instanceData[off + 2] = s.z;
         instanceData[off + 3] = s.facing;
 
@@ -285,9 +287,16 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
       gl.bindTexture(gl.TEXTURE_2D, atlas.texture);
       gl.uniform1i(shader.uniforms.u_atlas, 0);
 
-      // Draw instanced
       gl.bindVertexArray(vao);
+
+      // Pass 1: Shadows (flat ground ellipses)
+      gl.uniform1i(shader.uniforms.u_shadowPass, 1);
       gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, count);
+
+      // Pass 2: Sprites (camera-facing quads)
+      gl.uniform1i(shader.uniforms.u_shadowPass, 0);
+      gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, count);
+
       gl.bindVertexArray(null);
     },
 

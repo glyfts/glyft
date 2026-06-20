@@ -2,13 +2,10 @@
  * Billboard sprite shaders for 3D rendering.
  *
  * Renders 2D sprites as camera-facing quads positioned in 3D world space.
+ * Supports shadow pass (flat ground ellipses beneath sprites).
  * Uses the same spritesheet convention as the 2D sprite shader:
  * - Rows = directions
  * - Columns = frames (idle first, then walk)
- *
- * Direction is determined by the sprite's facing angle relative to the
- * camera, so a sprite facing "north" shows its back when the camera
- * is behind it, and its front when the camera is in front.
  */
 
 export const billboardVertexShader = /*glsl*/ `#version 300 es
@@ -33,11 +30,13 @@ uniform vec3 u_cameraUp;
 uniform float u_time;
 uniform vec2 u_atlasSize;
 uniform int u_spriteMode;  // 0=4dir, 1=8dir
+uniform int u_shadowPass;  // 0=normal, 1=shadow
 
 out vec2 v_texCoord;
 out float v_alpha;
 out vec3 v_tint;
 out float v_fogDist;
+out vec2 v_localUV;
 
 vec3 unpackTint(float packed) {
   uint p = floatBitsToUint(packed);
@@ -48,16 +47,12 @@ vec3 unpackTint(float packed) {
   );
 }
 
-// Get direction row for 4dir based on angle
-// angle = sprite facing relative to camera (0 = facing camera, PI = facing away)
 int getDirection4(float angle) {
-  // Remap: 0=down(toward cam), 1=right, 2=up(away), 3=left
-  float a = mod(angle + 6.28318530, 6.28318530) / 6.28318530; // 0..1
+  float a = mod(angle + 6.28318530, 6.28318530) / 6.28318530;
   int idx = int(a * 4.0 + 0.5) % 4;
   return idx;
 }
 
-// Get direction row for 8dir
 int getDirection8(float angle) {
   float a = mod(angle + 6.28318530, 6.28318530) / 6.28318530;
   int idx = int(a * 8.0 + 0.5) % 8;
@@ -73,16 +68,15 @@ void main() {
   v_alpha = a_props.y;
   v_tint = unpackTint(a_props.z);
   float spriteHeight = a_props.w;
+  v_localUV = a_position;
 
-  // Animation
   int idleFrames = int(a_anim.x);
   int walkFrames = int(a_anim.y);
   float fps = a_anim.z;
   uint flags = floatBitsToUint(a_anim.w);
   bool flipX = (flags & 2u) != 0u;
 
-  // Direction based on facing angle relative to camera
-  // cameraAngle - facing: when sprite faces toward camera, angle ≈ 0 → row 0 (down/front)
+  // Direction
   vec3 toCamera = u_cameraPos - worldPos;
   float cameraAngle = atan(toCamera.x, toCamera.z);
   float relAngle = cameraAngle - facing;
@@ -94,20 +88,18 @@ void main() {
     direction = getDirection4(relAngle);
   }
 
-  // Animation frame — check for override first
+  // Animation frame
   int col;
   int row = direction;
 
   float overrideFrames = a_override.y;
   if (overrideFrames > 0.0) {
-    // Animation override active (e.g. attack, cast, hit reaction)
     float overrideStart = a_override.x;
     float overrideFps = a_override.z;
     float overrideElapsed = a_override.w;
     int frame = int(mod(overrideElapsed * overrideFps, overrideFrames));
     col = int(overrideStart) + frame;
   } else {
-    // Normal idle/walk animation
     bool isMoving = speed > 0.5;
     bool useWalk = isMoving && walkFrames > 0;
     int numFrames = useWalk ? walkFrames : idleFrames;
@@ -120,49 +112,77 @@ void main() {
   vec2 baseFramePos = a_frame.xy;
   vec2 framePos = baseFramePos + vec2(float(col) * frameSize.x, float(row) * frameSize.y);
 
-  // UV
   vec2 uv = a_position;
   if (flipX) uv.x = 1.0 - uv.x;
   v_texCoord = (framePos + uv * frameSize) / u_atlasSize;
 
-  // Billboard quad in world space
-  // Offset from center-bottom of sprite (feet at worldPos)
-  vec2 local = a_position - vec2(0.5, 1.0); // center-x, bottom-y
-  local *= frameSize * scale * spriteHeight;
+  if (u_shadowPass == 1) {
+    // Shadow: flat ellipse on the ground at sprite's feet
+    float shadowW = frameSize.x * scale * spriteHeight * 0.8;
+    float shadowD = shadowW * 0.4; // Foreshortened depth
+    vec2 local = a_position - vec2(0.5, 0.5); // Center
 
-  vec3 billboardPos = worldPos
-    + u_cameraRight * local.x
-    + u_cameraUp * (-local.y); // Flip Y: up in UV = up in world
+    // Flat on XZ plane (ground)
+    vec3 shadowPos = worldPos
+      + vec3(local.x * shadowW, 0.05, local.y * shadowD); // Tiny Y offset to avoid z-fight
 
-  // Fog distance
-  v_fogDist = distance(worldPos, u_cameraPos);
+    v_alpha = 0.35;
+    v_fogDist = distance(worldPos, u_cameraPos);
+    gl_Position = u_viewProj * vec4(shadowPos, 1.0);
+  } else {
+    // Normal billboard: camera-facing quad
+    vec2 local = a_position - vec2(0.5, 1.0);
+    local *= frameSize * scale * spriteHeight;
 
-  gl_Position = u_viewProj * vec4(billboardPos, 1.0);
+    vec3 billboardPos = worldPos
+      + u_cameraRight * local.x
+      + u_cameraUp * (-local.y);
+
+    v_fogDist = distance(worldPos, u_cameraPos);
+    gl_Position = u_viewProj * vec4(billboardPos, 1.0);
+  }
 }
 `;
 
 export const billboardFragmentShader = /*glsl*/ `#version 300 es
 precision highp float;
+precision highp int;
 
 uniform sampler2D u_atlas;
 uniform vec3 u_fogColor;
 uniform float u_fogNear;
 uniform float u_fogFar;
+uniform int u_shadowPass;
 
 in vec2 v_texCoord;
 in float v_alpha;
 in vec3 v_tint;
 in float v_fogDist;
+in vec2 v_localUV;
 
 out vec4 fragColor;
 
 void main() {
+  if (u_shadowPass == 1) {
+    // Shadow: dark ellipse
+    vec2 p = (v_localUV - 0.5) * 2.0;
+    float dist = length(p);
+    if (dist > 1.0) discard;
+    float alpha = smoothstep(1.0, 0.4, dist) * v_alpha;
+
+    // Apply fog to shadow too
+    float fogFactor = clamp((v_fogDist - u_fogNear) / (u_fogFar - u_fogNear), 0.0, 1.0);
+    alpha *= (1.0 - fogFactor);
+
+    fragColor = vec4(0.0, 0.0, 0.0, alpha);
+    return;
+  }
+
   vec4 texColor = texture(u_atlas, v_texCoord);
   if (texColor.a < 0.01) discard;
 
   vec3 color = texColor.rgb * v_tint;
 
-  // Distance fog (match terrain)
   float fogFactor = clamp((v_fogDist - u_fogNear) / (u_fogFar - u_fogNear), 0.0, 1.0);
   color = mix(color, u_fogColor, fogFactor);
 
