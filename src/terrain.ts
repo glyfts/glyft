@@ -237,7 +237,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
     [
       'u_mvp', 'u_texture', 'u_lightDir', 'u_ambientColor', 'u_lightColor',
       'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_cameraPos', 'u_maxHeight',
-      'u_texLow', 'u_texMid', 'u_texSteep', 'u_texHigh', 'u_useSplatmap',
+      'u_texLow', 'u_texMid', 'u_texSteep', 'u_texHigh', 'u_useSplatmap', 'u_waterHeightNorm',
     ],
     ['a_position', 'a_normal', 'a_uv'],
   );
@@ -304,6 +304,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       // Textures
       if (useSplatmap && splatTextures) {
         gl.uniform1i(shader.uniforms.u_useSplatmap, 1);
+        gl.uniform1f(shader.uniforms.u_waterHeightNorm, waterHeight != null ? waterHeight / maxHeight : 0);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, texture);

@@ -48,6 +48,7 @@ uniform sampler2D u_texMid;
 uniform sampler2D u_texSteep;
 uniform sampler2D u_texHigh;
 uniform int u_useSplatmap;
+uniform float u_waterHeightNorm;
 
 in vec3 v_normal;
 in vec2 v_uv;
@@ -66,8 +67,9 @@ void main() {
     float slope = normal.y;
     float steepness = 1.0 - smoothstep(0.6, 0.85, slope);
 
-    // Height-based blend weights
-    float lowWeight = smoothstep(0.15, 0.0, v_heightNorm);                          // Sand at bottom
+    // Height-based blend weights — sand extends to just above water line
+    float sandLine = u_waterHeightNorm + 0.05;
+    float lowWeight = smoothstep(sandLine + 0.05, sandLine - 0.02, v_heightNorm);   // Sand at/below water
     float highWeight = smoothstep(0.65, 0.85, v_heightNorm);                         // Snow at top
     float midWeight = 1.0 - lowWeight - highWeight;                                  // Grass in middle
     midWeight = max(midWeight, 0.0);
