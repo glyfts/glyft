@@ -298,6 +298,9 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
       gl.bindTexture(gl.TEXTURE_2D, atlas.texture);
       gl.uniform1i(shader.uniforms.u_atlas, 0);
 
+      // Disable backface culling for billboards (visible from both sides)
+      gl.disable(gl.CULL_FACE);
+
       gl.bindVertexArray(vao);
 
       // Pass 1: Shadows (flat ground ellipses)
