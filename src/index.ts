@@ -91,6 +91,10 @@ export type { TerrainConfig, Camera3D, TerrainSystem } from './terrain';
 export { createBillboardSystem } from './billboard';
 export type { BillboardSprite, BillboardAtlas, BillboardSystem } from './billboard';
 
+// Mesh system (buildings, props)
+export { createMeshSystem } from './mesh';
+export type { MeshPart, BuildingDef, BuildingInstance, MeshSystem } from './mesh';
+
 // 3D math utilities
 export { vec3, mat4Perspective, mat4LookAt, mat4Multiply, project } from './math3d';
 export type { Vec3, Mat4 } from './math3d';
