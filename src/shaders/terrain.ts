@@ -2,7 +2,8 @@
  * Terrain shaders for heightmap mesh rendering.
  *
  * Vertex shader: transforms terrain mesh through MVP matrix.
- * Fragment shader: textured surface with directional lighting and distance fog.
+ * Fragment shader: multi-texture splatmap blending by height and slope,
+ * directional lighting, and distance fog.
  */
 
 export const terrainVertexShader = /*glsl*/ `#version 300 es
@@ -13,15 +14,18 @@ layout(location = 1) in vec3 a_normal;
 layout(location = 2) in vec2 a_uv;
 
 uniform mat4 u_mvp;
+uniform float u_maxHeight;
 
 out vec3 v_normal;
 out vec2 v_uv;
 out vec3 v_worldPos;
+out float v_heightNorm;
 
 void main() {
   v_normal = a_normal;
   v_uv = a_uv;
   v_worldPos = a_position;
+  v_heightNorm = clamp(a_position.y / max(u_maxHeight, 0.01), 0.0, 1.0);
   gl_Position = u_mvp * vec4(a_position, 1.0);
 }
 `;
@@ -38,22 +42,57 @@ uniform float u_fogNear;
 uniform float u_fogFar;
 uniform vec3 u_cameraPos;
 
+// Splatmap textures (bound when available)
+uniform sampler2D u_texLow;
+uniform sampler2D u_texMid;
+uniform sampler2D u_texSteep;
+uniform sampler2D u_texHigh;
+uniform int u_useSplatmap;
+
 in vec3 v_normal;
 in vec2 v_uv;
 in vec3 v_worldPos;
+in float v_heightNorm;
 
 out vec4 fragColor;
 
 void main() {
-  // Sample texture
-  vec4 texColor = texture(u_texture, v_uv);
+  vec3 normal = normalize(v_normal);
+
+  vec3 texColor;
+
+  if (u_useSplatmap == 1) {
+    // Slope: 1.0 = flat, 0.0 = vertical cliff
+    float slope = normal.y;
+    float steepness = 1.0 - smoothstep(0.6, 0.85, slope);
+
+    // Height-based blend weights
+    float lowWeight = smoothstep(0.15, 0.0, v_heightNorm);                          // Sand at bottom
+    float highWeight = smoothstep(0.65, 0.85, v_heightNorm);                         // Snow at top
+    float midWeight = 1.0 - lowWeight - highWeight;                                  // Grass in middle
+    midWeight = max(midWeight, 0.0);
+
+    // Rock overrides on steep slopes
+    float rockWeight = steepness;
+    lowWeight *= (1.0 - rockWeight);
+    midWeight *= (1.0 - rockWeight);
+    highWeight *= (1.0 - rockWeight);
+
+    // Sample all textures at tiled UV
+    vec3 colLow = texture(u_texLow, v_uv).rgb;
+    vec3 colMid = texture(u_texMid, v_uv).rgb;
+    vec3 colSteep = texture(u_texSteep, v_uv).rgb;
+    vec3 colHigh = texture(u_texHigh, v_uv).rgb;
+
+    texColor = colLow * lowWeight + colMid * midWeight + colSteep * rockWeight + colHigh * highWeight;
+  } else {
+    texColor = texture(u_texture, v_uv).rgb;
+  }
 
   // Directional lighting (Lambert)
-  vec3 normal = normalize(v_normal);
   float diffuse = max(dot(normal, u_lightDir), 0.0);
   vec3 lighting = u_ambientColor + u_lightColor * diffuse;
-
-  vec3 color = texColor.rgb * lighting;
+  vec3 color = texColor * lighting;
 
   // Distance fog
   float dist = distance(v_worldPos, u_cameraPos);

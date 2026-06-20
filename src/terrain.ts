@@ -28,10 +28,21 @@ export interface TerrainConfig {
   cellSize: number;
   /** Maximum terrain height in world units */
   maxHeight: number;
-  /** Texture to apply to terrain surface */
+  /** Primary texture (used when no splatmap textures provided) */
   texture: WebGLTexture;
   /** Texture dimensions for UV calculation */
   textureRepeat?: number;
+  /** Splatmap textures — blended by height and slope when provided */
+  splatTextures?: {
+    /** Flat lowlands (default: sand) */
+    low: WebGLTexture;
+    /** Flat midlands (default: grass) */
+    mid: WebGLTexture;
+    /** Steep surfaces (default: rock) */
+    steep: WebGLTexture;
+    /** High elevations (default: snow) */
+    high: WebGLTexture;
+  };
 }
 
 export interface Camera3D {
@@ -210,15 +221,21 @@ function sampleHeight(heightmap: number[][], cellSize: number, maxHeight: number
 // ---- Create Terrain System ----
 
 export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainConfig): TerrainSystem {
-  const { heightmap, cellSize, maxHeight, texture, textureRepeat = 8 } = config;
+  const { heightmap, cellSize, maxHeight, texture, textureRepeat = 8, splatTextures } = config;
 
   const shader = compileShader(
     gl,
     terrainVertexShader,
     terrainFragmentShader,
-    ['u_mvp', 'u_texture', 'u_lightDir', 'u_ambientColor', 'u_lightColor', 'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_cameraPos'],
+    [
+      'u_mvp', 'u_texture', 'u_lightDir', 'u_ambientColor', 'u_lightColor',
+      'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_cameraPos', 'u_maxHeight',
+      'u_texLow', 'u_texMid', 'u_texSteep', 'u_texHigh', 'u_useSplatmap',
+    ],
     ['a_position', 'a_normal', 'a_uv'],
   );
+
+  const useSplatmap = !!splatTextures;
 
   const mesh = buildTerrainMesh(gl, heightmap, cellSize, maxHeight, textureRepeat);
 
@@ -251,10 +268,38 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       // MVP matrix
       gl.uniformMatrix4fv(shader.uniforms.u_mvp, false, vp);
 
-      // Texture
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.uniform1i(shader.uniforms.u_texture, 0);
+      // Height uniform for splatmap blending
+      gl.uniform1f(shader.uniforms.u_maxHeight, maxHeight);
+
+      // Textures
+      if (useSplatmap && splatTextures) {
+        gl.uniform1i(shader.uniforms.u_useSplatmap, 1);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.uniform1i(shader.uniforms.u_texture, 0);
+
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, splatTextures.low);
+        gl.uniform1i(shader.uniforms.u_texLow, 1);
+
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, splatTextures.mid);
+        gl.uniform1i(shader.uniforms.u_texMid, 2);
+
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, splatTextures.steep);
+        gl.uniform1i(shader.uniforms.u_texSteep, 3);
+
+        gl.activeTexture(gl.TEXTURE4);
+        gl.bindTexture(gl.TEXTURE_2D, splatTextures.high);
+        gl.uniform1i(shader.uniforms.u_texHigh, 4);
+      } else {
+        gl.uniform1i(shader.uniforms.u_useSplatmap, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.uniform1i(shader.uniforms.u_texture, 0);
+      }
 
       // Directional light (sun from above-right)
       const lightDir = vec3Normalize(vec3(0.3, 1.0, 0.5));
