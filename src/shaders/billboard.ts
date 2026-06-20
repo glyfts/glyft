@@ -24,6 +24,7 @@ layout(location = 2) in vec4 a_velocity;    // vx, vy, vz, speed
 layout(location = 3) in vec4 a_frame;       // u, v, w, h (base frame in atlas)
 layout(location = 4) in vec4 a_anim;        // idleFrames, walkFrames, fps, flags
 layout(location = 5) in vec4 a_props;       // scale, alpha, tint (packed), spriteHeight
+layout(location = 6) in vec4 a_override;    // startCol, frameCount, fps, elapsed (0 = inactive)
 
 uniform mat4 u_viewProj;
 uniform vec3 u_cameraPos;
@@ -93,16 +94,28 @@ void main() {
     direction = getDirection4(relAngle);
   }
 
-  // Animation frame
-  bool isMoving = speed > 0.5;
-  bool useWalk = isMoving && walkFrames > 0;
-  int numFrames = useWalk ? walkFrames : idleFrames;
-  int frameOffset = useWalk ? idleFrames : 0;
-  float actualFps = useWalk ? fps : fps * 0.5;
-  int frame = int(mod(u_time * actualFps, float(max(numFrames, 1))));
-
-  int col = frameOffset + frame;
+  // Animation frame — check for override first
+  int col;
   int row = direction;
+
+  float overrideFrames = a_override.y;
+  if (overrideFrames > 0.0) {
+    // Animation override active (e.g. attack, cast, hit reaction)
+    float overrideStart = a_override.x;
+    float overrideFps = a_override.z;
+    float overrideElapsed = a_override.w;
+    int frame = int(mod(overrideElapsed * overrideFps, overrideFrames));
+    col = int(overrideStart) + frame;
+  } else {
+    // Normal idle/walk animation
+    bool isMoving = speed > 0.5;
+    bool useWalk = isMoving && walkFrames > 0;
+    int numFrames = useWalk ? walkFrames : idleFrames;
+    int frameOffset = useWalk ? idleFrames : 0;
+    float actualFps = useWalk ? fps : fps * 0.5;
+    int frame = int(mod(u_time * actualFps, float(max(numFrames, 1))));
+    col = frameOffset + frame;
+  }
 
   vec2 baseFramePos = a_frame.xy;
   vec2 framePos = baseFramePos + vec2(float(col) * frameSize.x, float(row) * frameSize.y);

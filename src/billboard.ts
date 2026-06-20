@@ -51,6 +51,14 @@ export interface BillboardSprite {
   fps: number;
   /** Flip X */
   flipX: boolean;
+  /** Animation override: starting frame column (e.g. 5 for sword attack) */
+  animOverrideStart: number;
+  /** Animation override: number of frames to play */
+  animOverrideFrames: number;
+  /** Animation override: timestamp when override started (0 = inactive) */
+  animOverrideTime: number;
+  /** Animation override: fps for the override (default 12) */
+  animOverrideFps: number;
 }
 
 export interface BillboardAtlas {
@@ -76,8 +84,8 @@ export interface BillboardSystem {
 
 // ---- Constants ----
 
-// Floats per instance: worldPos(4) + velocity(4) + frame(4) + anim(4) + props(4) = 20
-const FLOATS_PER_INSTANCE = 20;
+// Floats per instance: worldPos(4) + velocity(4) + frame(4) + anim(4) + props(4) + override(4) = 24
+const FLOATS_PER_INSTANCE = 24;
 const MAX_SPRITES = 4096;
 
 // ---- Create Billboard System ----
@@ -92,7 +100,7 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
       'u_time', 'u_atlasSize', 'u_spriteMode', 'u_atlas',
       'u_fogColor', 'u_fogNear', 'u_fogFar',
     ],
-    ['a_position', 'a_worldPos', 'a_velocity', 'a_frame', 'a_anim', 'a_props'],
+    ['a_position', 'a_worldPos', 'a_velocity', 'a_frame', 'a_anim', 'a_props', 'a_override'],
   );
 
   // Quad geometry (two triangles)
@@ -149,6 +157,11 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
   gl.enableVertexAttribArray(5);
   gl.vertexAttribPointer(5, 4, gl.FLOAT, false, stride, 64);
   gl.vertexAttribDivisor(5, 1);
+
+  // location 6: override (startCol, frameCount, fps, elapsed)
+  gl.enableVertexAttribArray(6);
+  gl.vertexAttribPointer(6, 4, gl.FLOAT, false, stride, 80);
+  gl.vertexAttribDivisor(6, 1);
 
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quadEBO);
 
@@ -215,6 +228,30 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
         flagsView.setUint32(0, s.tint, true);
         instanceData[off + 18] = flagsView.getFloat32(0, true);
         instanceData[off + 19] = s.spriteHeight;
+
+        // override
+        const overrideActive = s.animOverrideTime > 0 && s.animOverrideFrames > 0;
+        if (overrideActive) {
+          const elapsed = time - (s.animOverrideTime - startTime);
+          const duration = s.animOverrideFrames / (s.animOverrideFps || 12);
+          if (elapsed >= 0 && elapsed < duration) {
+            instanceData[off + 20] = s.animOverrideStart;
+            instanceData[off + 21] = s.animOverrideFrames;
+            instanceData[off + 22] = s.animOverrideFps || 12;
+            instanceData[off + 23] = elapsed;
+          } else {
+            // Override expired
+            instanceData[off + 20] = 0;
+            instanceData[off + 21] = 0;
+            instanceData[off + 22] = 0;
+            instanceData[off + 23] = 0;
+          }
+        } else {
+          instanceData[off + 20] = 0;
+          instanceData[off + 21] = 0;
+          instanceData[off + 22] = 0;
+          instanceData[off + 23] = 0;
+        }
       }
 
       // Upload
