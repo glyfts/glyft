@@ -206,7 +206,7 @@ function generateSteppedVertices(
       pushQuad(wx, h, wz1, wx1, h, wz1, wx1, h, wz, wx, h, wz, 0, 1, 0, u0, v0, u1, v1);
 
       // Side walls — UVs: 1 tile per cell width, scale height to match
-      const wallTile = 1.0; // 1 texture repeat per cell
+      const wallTile = 0.5; // Half a texture repeat per cell = bigger bricks
       // East neighbor
       if (x + 1 < cols) {
         const hE = heightmap[z][x + 1] * maxHeight;
