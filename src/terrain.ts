@@ -48,6 +48,8 @@ export interface TerrainConfig {
   waterHeight?: number;
   /** Hard texture transitions (no blending). Good for dungeons. */
   hardBlend?: boolean;
+  /** Stepped terrain: flat cells with vertical walls between heights. No slopes. */
+  stepped?: boolean;
   /** Water/lava style. Defaults to blue water. */
   waterStyle?: {
     deepColor?: [number, number, number];
@@ -92,6 +94,8 @@ export interface TerrainSystem {
   setSplatTextures(textures: TerrainConfig['splatTextures']): void;
   /** Toggle hard texture blending (sharp cutoffs for dungeons) */
   setHardBlend(enabled: boolean): void;
+  /** Toggle stepped terrain (flat cells with vertical walls, no slopes) */
+  setStepped(enabled: boolean): void;
   /** Get terrain dimensions in world units */
   getWorldSize(): [number, number];
   /** Modify heightmap and rebuild mesh. Callback receives the heightmap array for mutation. */
@@ -107,8 +111,10 @@ export interface TerrainSystem {
 interface TerrainMesh {
   vao: WebGLVertexArrayObject;
   indexCount: number;
+  vertexCount: number;
   vertexBuffer: WebGLBuffer;
-  indexBuffer: WebGLBuffer;
+  indexBuffer: WebGLBuffer | null;
+  stepped: boolean;
 }
 
 function generateTerrainVertices(
@@ -145,71 +151,160 @@ function generateTerrainVertices(
   return vertices;
 }
 
+/**
+ * Stepped terrain: each cell is a flat quad at its own height.
+ * No shared vertices = no slopes. Vertical walls between different heights.
+ * 6 verts per cell top + up to 24 for side walls = 30 verts per cell.
+ */
+function generateSteppedVertices(
+  heightmap: number[][], cellSize: number, maxHeight: number, textureRepeat: number,
+): { vertices: Float32Array; vertexCount: number } {
+  const rows = heightmap.length;
+  const cols = heightmap[0].length;
+  // Worst case: each cell has top quad (6 verts) + 4 side walls (6 verts each) = 30
+  const maxVerts = rows * cols * 30;
+  const verts = new Float32Array(maxVerts * 8);
+  let vi = 0;
+
+  function pushVert(x: number, y: number, z: number, nx: number, ny: number, nz: number, u: number, v: number) {
+    const i = vi * 8;
+    verts[i] = x; verts[i+1] = y; verts[i+2] = z;
+    verts[i+3] = nx; verts[i+4] = ny; verts[i+5] = nz;
+    verts[i+6] = u; verts[i+7] = v;
+    vi++;
+  }
+
+  function pushQuad(
+    x0: number, y0: number, z0: number,
+    x1: number, y1: number, z1: number,
+    x2: number, y2: number, z2: number,
+    x3: number, y3: number, z3: number,
+    nx: number, ny: number, nz: number,
+    u0: number, v0: number, u1: number, v1: number,
+  ) {
+    pushVert(x0, y0, z0, nx, ny, nz, u0, v1);
+    pushVert(x1, y1, z1, nx, ny, nz, u1, v1);
+    pushVert(x2, y2, z2, nx, ny, nz, u1, v0);
+    pushVert(x0, y0, z0, nx, ny, nz, u0, v1);
+    pushVert(x2, y2, z2, nx, ny, nz, u1, v0);
+    pushVert(x3, y3, z3, nx, ny, nz, u0, v0);
+  }
+
+  for (let z = 0; z < rows - 1; z++) {
+    for (let x = 0; x < cols - 1; x++) {
+      const h = heightmap[z][x] * maxHeight;
+      const wx = x * cellSize;
+      const wz = z * cellSize;
+      const wx1 = (x + 1) * cellSize;
+      const wz1 = (z + 1) * cellSize;
+      const u0 = (x / (cols - 1)) * textureRepeat;
+      const u1 = ((x + 1) / (cols - 1)) * textureRepeat;
+      const v0 = (z / (rows - 1)) * textureRepeat;
+      const v1 = ((z + 1) / (rows - 1)) * textureRepeat;
+
+      // Top face (flat quad at cell height)
+      pushQuad(wx, h, wz1, wx1, h, wz1, wx1, h, wz, wx, h, wz, 0, 1, 0, u0, v0, u1, v1);
+
+      // Side walls where adjacent cell is lower
+      // East neighbor
+      if (x + 1 < cols) {
+        const hE = heightmap[z][x + 1] * maxHeight;
+        if (hE < h) {
+          pushQuad(wx1, h, wz, wx1, h, wz1, wx1, hE, wz1, wx1, hE, wz, 1, 0, 0, u1, v0, u1, v1);
+        }
+      }
+      // West (only if we're the first or neighbor is lower)
+      if (x > 0) {
+        const hW = heightmap[z][x - 1] * maxHeight;
+        if (hW < h) {
+          pushQuad(wx, h, wz1, wx, h, wz, wx, hW, wz, wx, hW, wz1, -1, 0, 0, u0, v0, u0, v1);
+        }
+      }
+      // South neighbor
+      if (z + 1 < rows) {
+        const hS = heightmap[z + 1][x] * maxHeight;
+        if (hS < h) {
+          pushQuad(wx1, h, wz1, wx, h, wz1, wx, hS, wz1, wx1, hS, wz1, 0, 0, 1, u0, v1, u1, v1);
+        }
+      }
+      // North
+      if (z > 0) {
+        const hN = heightmap[z - 1][x] * maxHeight;
+        if (hN < h) {
+          pushQuad(wx, h, wz, wx1, h, wz, wx1, hN, wz, wx, hN, wz, 0, 0, -1, u0, v0, u1, v0);
+        }
+      }
+    }
+  }
+
+  return { vertices: verts.subarray(0, vi * 8), vertexCount: vi };
+}
+
 function buildTerrainMesh(
   gl: WebGL2RenderingContext,
   heightmap: number[][],
   cellSize: number,
   maxHeight: number,
   textureRepeat: number,
+  stepped = false,
 ): TerrainMesh {
   const rows = heightmap.length;
   const cols = heightmap[0].length;
 
-  const vertices = generateTerrainVertices(heightmap, cellSize, maxHeight, textureRepeat);
-
-  // Generate indices (two triangles per cell)
-  const cellRows = rows - 1;
-  const cellCols = cols - 1;
-  const indexCount = cellRows * cellCols * 6;
-  const indices = new Uint32Array(indexCount);
-  let idx = 0;
-
-  for (let z = 0; z < cellRows; z++) {
-    for (let x = 0; x < cellCols; x++) {
-      const topLeft = z * cols + x;
-      const topRight = topLeft + 1;
-      const bottomLeft = (z + 1) * cols + x;
-      const bottomRight = bottomLeft + 1;
-
-      // Triangle 1
-      indices[idx++] = topLeft;
-      indices[idx++] = bottomLeft;
-      indices[idx++] = topRight;
-
-      // Triangle 2
-      indices[idx++] = topRight;
-      indices[idx++] = bottomLeft;
-      indices[idx++] = bottomRight;
-    }
-  }
-
-  // Upload to GPU
   const vao = gl.createVertexArray()!;
   gl.bindVertexArray(vao);
 
   const vertexBuffer = gl.createBuffer()!;
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
 
-  // Position (location 0)
+  let indexCount = 0;
+  let vertexCount = 0;
+  let indexBuffer: WebGLBuffer | null = null;
+
+  if (stepped) {
+    // Stepped: each cell = flat quad + vertical side walls. No shared vertices.
+    const result = generateSteppedVertices(heightmap, cellSize, maxHeight, textureRepeat);
+    gl.bufferData(gl.ARRAY_BUFFER, result.vertices, gl.DYNAMIC_DRAW);
+    vertexCount = result.vertexCount;
+  } else {
+    // Smooth: shared vertices, indexed triangles
+    const vertices = generateTerrainVertices(heightmap, cellSize, maxHeight, textureRepeat);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+
+    const cellRows = rows - 1;
+    const cellCols = cols - 1;
+    indexCount = cellRows * cellCols * 6;
+    const indices = new Uint32Array(indexCount);
+    let idx = 0;
+    for (let z = 0; z < cellRows; z++) {
+      for (let x = 0; x < cellCols; x++) {
+        const topLeft = z * cols + x;
+        const topRight = topLeft + 1;
+        const bottomLeft = (z + 1) * cols + x;
+        const bottomRight = bottomLeft + 1;
+        indices[idx++] = topLeft;
+        indices[idx++] = bottomLeft;
+        indices[idx++] = topRight;
+        indices[idx++] = topRight;
+        indices[idx++] = bottomLeft;
+        indices[idx++] = bottomRight;
+      }
+    }
+    indexBuffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+  }
+
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
-
-  // Normal (location 1)
   gl.enableVertexAttribArray(1);
   gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 12);
-
-  // UV (location 2)
   gl.enableVertexAttribArray(2);
   gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
 
-  const indexBuffer = gl.createBuffer()!;
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-
   gl.bindVertexArray(null);
 
-  return { vao, indexCount, vertexBuffer, indexBuffer };
+  return { vao, indexCount, vertexCount, vertexBuffer, indexBuffer, stepped };
 }
 
 // ---- Height Query ----
@@ -367,7 +462,11 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
       // Draw terrain
       gl.bindVertexArray(mesh.vao);
-      gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_INT, 0);
+      if (mesh.stepped) {
+        gl.drawArrays(gl.TRIANGLES, 0, mesh.vertexCount);
+      } else {
+        gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_INT, 0);
+      }
       gl.bindVertexArray(null);
 
       // Draw water plane
@@ -421,11 +520,16 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
     modifyHeightmap(fn: (hm: number[][]) => void) {
       fn(heightmap);
-      // Regenerate vertices and re-upload
-      const newVerts = generateTerrainVertices(heightmap, cellSize, maxHeight, textureRepeat);
       gl.bindVertexArray(mesh.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vertexBuffer);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, newVerts);
+      if (mesh.stepped) {
+        const result = generateSteppedVertices(heightmap, cellSize, maxHeight, textureRepeat);
+        gl.bufferData(gl.ARRAY_BUFFER, result.vertices, gl.DYNAMIC_DRAW);
+        mesh.vertexCount = result.vertexCount;
+      } else {
+        const newVerts = generateTerrainVertices(heightmap, cellSize, maxHeight, textureRepeat);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, newVerts);
+      }
       gl.bindVertexArray(null);
     },
 
@@ -443,6 +547,13 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
     setHardBlend(enabled: boolean) {
       config.hardBlend = enabled;
+    },
+
+    setStepped(enabled: boolean) {
+      if (mesh.stepped === enabled) return;
+      mesh.stepped = enabled;
+      // Rebuild mesh in new mode
+      this.modifyHeightmap(() => {}); // Triggers rebuild with current data
     },
 
     isWater(worldX: number, worldZ: number): boolean {
