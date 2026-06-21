@@ -205,37 +205,38 @@ function generateSteppedVertices(
       // Top face (flat quad at cell height)
       pushQuad(wx, h, wz1, wx1, h, wz1, wx1, h, wz, wx, h, wz, 0, 1, 0, u0, v0, u1, v1);
 
-      // Side walls — UVs tile horizontally along wall, vertically by height
+      // Side walls — UVs: 1 tile per cell width, scale height to match
+      const wallTile = 1.0; // 1 texture repeat per cell
       // East neighbor
       if (x + 1 < cols) {
         const hE = heightmap[z][x + 1] * maxHeight;
         if (hE < h) {
-          const wallH = (h - hE) / cellSize; // Height in tile units
-          pushQuad(wx1, h, wz, wx1, h, wz1, wx1, hE, wz1, wx1, hE, wz, 1, 0, 0, v0, 0, v1, wallH);
+          const wallH = (h - hE) / cellSize * wallTile;
+          pushQuad(wx1, h, wz, wx1, h, wz1, wx1, hE, wz1, wx1, hE, wz, 1, 0, 0, 0, 0, wallTile, wallH);
         }
       }
       // West
       if (x > 0) {
         const hW = heightmap[z][x - 1] * maxHeight;
         if (hW < h) {
-          const wallH = (h - hW) / cellSize;
-          pushQuad(wx, h, wz1, wx, h, wz, wx, hW, wz, wx, hW, wz1, -1, 0, 0, v0, 0, v1, wallH);
+          const wallH = (h - hW) / cellSize * wallTile;
+          pushQuad(wx, h, wz1, wx, h, wz, wx, hW, wz, wx, hW, wz1, -1, 0, 0, 0, 0, wallTile, wallH);
         }
       }
       // South
       if (z + 1 < rows) {
         const hS = heightmap[z + 1][x] * maxHeight;
         if (hS < h) {
-          const wallH = (h - hS) / cellSize;
-          pushQuad(wx1, h, wz1, wx, h, wz1, wx, hS, wz1, wx1, hS, wz1, 0, 0, 1, u0, 0, u1, wallH);
+          const wallH = (h - hS) / cellSize * wallTile;
+          pushQuad(wx1, h, wz1, wx, h, wz1, wx, hS, wz1, wx1, hS, wz1, 0, 0, 1, 0, 0, wallTile, wallH);
         }
       }
       // North
       if (z > 0) {
         const hN = heightmap[z - 1][x] * maxHeight;
         if (hN < h) {
-          const wallH = (h - hN) / cellSize;
-          pushQuad(wx, h, wz, wx1, h, wz, wx1, hN, wz, wx, hN, wz, 0, 0, -1, u0, 0, u1, wallH);
+          const wallH = (h - hN) / cellSize * wallTile;
+          pushQuad(wx, h, wz, wx1, h, wz, wx1, hN, wz, wx, hN, wz, 0, 0, -1, 0, 0, wallTile, wallH);
         }
       }
     }
@@ -313,25 +314,26 @@ function buildTerrainMesh(
 
 // ---- Height Query ----
 
-function sampleHeight(heightmap: number[][], cellSize: number, maxHeight: number, worldX: number, worldZ: number): number {
+function sampleHeight(heightmap: number[][], cellSize: number, maxHeight: number, worldX: number, worldZ: number, stepped = false): number {
   const cols = heightmap[0].length;
   const rows = heightmap.length;
 
-  // Convert world pos to grid pos
   const gx = worldX / cellSize;
   const gz = worldZ / cellSize;
 
-  // Clamp to grid bounds
   const x0 = Math.max(0, Math.min(Math.floor(gx), cols - 2));
   const z0 = Math.max(0, Math.min(Math.floor(gz), rows - 2));
+
+  if (stepped) {
+    // Snap to cell height — no interpolation
+    return heightmap[z0][x0] * maxHeight;
+  }
+
   const x1 = x0 + 1;
   const z1 = z0 + 1;
-
-  // Fractional part for interpolation
   const fx = gx - x0;
   const fz = gz - z0;
 
-  // Bilinear interpolation
   const h00 = heightmap[z0][x0];
   const h10 = heightmap[z0][x1];
   const h01 = heightmap[z1][x0];
@@ -506,7 +508,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
     },
 
     getHeight(worldX: number, worldZ: number): number {
-      return sampleHeight(heightmap, cellSize, maxHeight, worldX, worldZ);
+      return sampleHeight(heightmap, cellSize, maxHeight, worldX, worldZ, mesh.stepped);
     },
 
     getNormal(worldX: number, worldZ: number): Vec3 {
@@ -562,7 +564,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
     isWater(worldX: number, worldZ: number): boolean {
       if (waterHeight == null) return false;
-      return sampleHeight(heightmap, cellSize, maxHeight, worldX, worldZ) < waterHeight;
+      return sampleHeight(heightmap, cellSize, maxHeight, worldX, worldZ, mesh.stepped) < waterHeight;
     },
 
     getMVP(): Mat4 {
