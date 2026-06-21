@@ -46,6 +46,16 @@ export interface TerrainConfig {
   };
   /** Water surface height in world units. Set to render a water plane. */
   waterHeight?: number;
+  /** Hard texture transitions (no blending). Good for dungeons. */
+  hardBlend?: boolean;
+  /** Water/lava style. Defaults to blue water. */
+  waterStyle?: {
+    deepColor?: [number, number, number];
+    shallowColor?: [number, number, number];
+    alpha?: number;
+    speed?: number;
+    emissive?: number; // 0 = water, 1 = full lava glow
+  };
 }
 
 export interface Camera3D {
@@ -76,6 +86,12 @@ export interface TerrainSystem {
   getVP(): Mat4;
   /** Project a 3D world position to 2D screen coords */
   projectToScreen(pos: Vec3, viewportW: number, viewportH: number): [number, number, number] | null;
+  /** Update water/lava visual style at runtime */
+  setWaterStyle(style: TerrainConfig['waterStyle']): void;
+  /** Swap splatmap textures at runtime (for dungeon themes) */
+  setSplatTextures(textures: TerrainConfig['splatTextures']): void;
+  /** Toggle hard texture blending (sharp cutoffs for dungeons) */
+  setHardBlend(enabled: boolean): void;
   /** Get terrain dimensions in world units */
   getWorldSize(): [number, number];
   /** Modify heightmap and rebuild mesh. Callback receives the heightmap array for mutation. */
@@ -232,7 +248,7 @@ function sampleHeight(heightmap: number[][], cellSize: number, maxHeight: number
 // ---- Create Terrain System ----
 
 export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainConfig): TerrainSystem {
-  const { heightmap, cellSize, maxHeight, texture, textureRepeat = 8, splatTextures, waterHeight } = config;
+  const { heightmap, cellSize, maxHeight, texture, textureRepeat = 8, waterHeight } = config;
 
   const shader = compileShader(
     gl,
@@ -241,12 +257,12 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
     [
       'u_mvp', 'u_texture', 'u_lightDir', 'u_ambientColor', 'u_lightColor',
       'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_cameraPos', 'u_maxHeight',
-      'u_texLow', 'u_texMid', 'u_texSteep', 'u_texHigh', 'u_useSplatmap', 'u_waterHeightNorm',
+      'u_texLow', 'u_texMid', 'u_texSteep', 'u_texHigh', 'u_useSplatmap', 'u_waterHeightNorm', 'u_hardBlend',
     ],
     ['a_position', 'a_normal', 'a_uv'],
   );
 
-  const useSplatmap = !!splatTextures;
+  // splatTextures read from config.splatTextures at render time (can be swapped)
 
   const mesh = buildTerrainMesh(gl, heightmap, cellSize, maxHeight, textureRepeat);
 
@@ -262,7 +278,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
   if (waterHeight != null) {
     waterShader = compileShader(gl, waterVertexShader, waterFragmentShader,
-      ['u_mvp', 'u_worldSize', 'u_waterHeight', 'u_time', 'u_cameraPos', 'u_fogColor', 'u_fogNear', 'u_fogFar'],
+      ['u_mvp', 'u_worldSize', 'u_waterHeight', 'u_time', 'u_cameraPos', 'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_deepColor', 'u_shallowColor', 'u_alpha', 'u_speed', 'u_emissive'],
       ['a_position'],
     );
     const quadVerts = new Float32Array([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1]);
@@ -306,8 +322,9 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       gl.uniform1f(shader.uniforms.u_maxHeight, maxHeight);
 
       // Textures
-      if (useSplatmap && splatTextures) {
+      if (config.splatTextures) {
         gl.uniform1i(shader.uniforms.u_useSplatmap, 1);
+        gl.uniform1i(shader.uniforms.u_hardBlend, config.hardBlend ? 1 : 0);
         gl.uniform1f(shader.uniforms.u_waterHeightNorm, waterHeight != null ? waterHeight / maxHeight : 0);
 
         gl.activeTexture(gl.TEXTURE0);
@@ -315,19 +332,19 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
         gl.uniform1i(shader.uniforms.u_texture, 0);
 
         gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, splatTextures.low);
+        gl.bindTexture(gl.TEXTURE_2D, config.splatTextures.low);
         gl.uniform1i(shader.uniforms.u_texLow, 1);
 
         gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, splatTextures.mid);
+        gl.bindTexture(gl.TEXTURE_2D, config.splatTextures.mid);
         gl.uniform1i(shader.uniforms.u_texMid, 2);
 
         gl.activeTexture(gl.TEXTURE3);
-        gl.bindTexture(gl.TEXTURE_2D, splatTextures.steep);
+        gl.bindTexture(gl.TEXTURE_2D, config.splatTextures.steep);
         gl.uniform1i(shader.uniforms.u_texSteep, 3);
 
         gl.activeTexture(gl.TEXTURE4);
-        gl.bindTexture(gl.TEXTURE_2D, splatTextures.high);
+        gl.bindTexture(gl.TEXTURE_2D, config.splatTextures.high);
         gl.uniform1i(shader.uniforms.u_texHigh, 4);
       } else {
         gl.uniform1i(shader.uniforms.u_useSplatmap, 0);
@@ -371,6 +388,14 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
         gl.uniform1f(waterShader.uniforms.u_fogNear, camera.far * 0.5);
         gl.uniform1f(waterShader.uniforms.u_fogFar, camera.far);
 
+        // Water style (defaults to blue water)
+        const ws = config.waterStyle;
+        gl.uniform3fv(waterShader.uniforms.u_deepColor, ws?.deepColor ?? [0.1, 0.25, 0.45]);
+        gl.uniform3fv(waterShader.uniforms.u_shallowColor, ws?.shallowColor ?? [0.2, 0.4, 0.6]);
+        gl.uniform1f(waterShader.uniforms.u_alpha, ws?.alpha ?? 0.7);
+        gl.uniform1f(waterShader.uniforms.u_speed, ws?.speed ?? 1.0);
+        gl.uniform1f(waterShader.uniforms.u_emissive, ws?.emissive ?? 0.0);
+
         gl.bindVertexArray(waterVAO);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         gl.bindVertexArray(null);
@@ -406,6 +431,18 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
     getHeightmap(): number[][] {
       return heightmap;
+    },
+
+    setWaterStyle(style: TerrainConfig['waterStyle']) {
+      config.waterStyle = style;
+    },
+
+    setSplatTextures(textures: TerrainConfig['splatTextures']) {
+      config.splatTextures = textures;
+    },
+
+    setHardBlend(enabled: boolean) {
+      config.hardBlend = enabled;
     },
 
     isWater(worldX: number, worldZ: number): boolean {

@@ -40,6 +40,7 @@ uniform vec3 u_lightColor;
 uniform vec3 u_fogColor;
 uniform float u_fogNear;
 uniform float u_fogFar;
+uniform int u_hardBlend; // 1 = hard texture transitions (dungeons), 0 = smooth (overworld)
 uniform vec3 u_cameraPos;
 
 // Splatmap textures (bound when available)
@@ -63,22 +64,32 @@ void main() {
   vec3 texColor;
 
   if (u_useSplatmap == 1) {
-    // Slope: 1.0 = flat, 0.0 = vertical cliff
     float slope = normal.y;
-    float steepness = 1.0 - smoothstep(0.6, 0.85, slope);
-
-    // Height-based blend weights — sand extends to just above water line
     float sandLine = u_waterHeightNorm + 0.05;
-    float lowWeight = smoothstep(sandLine + 0.05, sandLine - 0.02, v_heightNorm);   // Sand at/below water
-    float highWeight = smoothstep(0.65, 0.85, v_heightNorm);                         // Snow at top
-    float midWeight = 1.0 - lowWeight - highWeight;                                  // Grass in middle
-    midWeight = max(midWeight, 0.0);
 
-    // Rock overrides on steep slopes
-    float rockWeight = steepness;
-    lowWeight *= (1.0 - rockWeight);
-    midWeight *= (1.0 - rockWeight);
-    highWeight *= (1.0 - rockWeight);
+    float steepness, lowWeight, highWeight, midWeight, rockWeight;
+
+    if (u_hardBlend == 1) {
+      // Hard transitions — sharp cutoffs for dungeons/caves
+      steepness = slope < 0.7 ? 1.0 : 0.0;
+      lowWeight = v_heightNorm < sandLine ? 1.0 : 0.0;
+      highWeight = v_heightNorm > 0.5 ? 1.0 : 0.0;
+      midWeight = (1.0 - lowWeight) * (1.0 - highWeight);
+      rockWeight = steepness;
+      lowWeight *= (1.0 - rockWeight);
+      midWeight *= (1.0 - rockWeight);
+      highWeight *= (1.0 - rockWeight);
+    } else {
+      // Smooth transitions — natural blending for overworld
+      steepness = 1.0 - smoothstep(0.6, 0.85, slope);
+      lowWeight = smoothstep(sandLine + 0.05, sandLine - 0.02, v_heightNorm);
+      highWeight = smoothstep(0.65, 0.85, v_heightNorm);
+      midWeight = max(1.0 - lowWeight - highWeight, 0.0);
+      rockWeight = steepness;
+      lowWeight *= (1.0 - rockWeight);
+      midWeight *= (1.0 - rockWeight);
+      highWeight *= (1.0 - rockWeight);
+    }
 
     // Sample all textures at tiled UV
     vec3 colLow = texture(u_texLow, v_uv).rgb;
