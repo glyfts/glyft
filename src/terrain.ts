@@ -205,33 +205,37 @@ function generateSteppedVertices(
       // Top face (flat quad at cell height)
       pushQuad(wx, h, wz1, wx1, h, wz1, wx1, h, wz, wx, h, wz, 0, 1, 0, u0, v0, u1, v1);
 
-      // Side walls where adjacent cell is lower
+      // Side walls — UVs tile horizontally along wall, vertically by height
       // East neighbor
       if (x + 1 < cols) {
         const hE = heightmap[z][x + 1] * maxHeight;
         if (hE < h) {
-          pushQuad(wx1, h, wz, wx1, h, wz1, wx1, hE, wz1, wx1, hE, wz, 1, 0, 0, u1, v0, u1, v1);
+          const wallH = (h - hE) / cellSize; // Height in tile units
+          pushQuad(wx1, h, wz, wx1, h, wz1, wx1, hE, wz1, wx1, hE, wz, 1, 0, 0, v0, 0, v1, wallH);
         }
       }
-      // West (only if we're the first or neighbor is lower)
+      // West
       if (x > 0) {
         const hW = heightmap[z][x - 1] * maxHeight;
         if (hW < h) {
-          pushQuad(wx, h, wz1, wx, h, wz, wx, hW, wz, wx, hW, wz1, -1, 0, 0, u0, v0, u0, v1);
+          const wallH = (h - hW) / cellSize;
+          pushQuad(wx, h, wz1, wx, h, wz, wx, hW, wz, wx, hW, wz1, -1, 0, 0, v0, 0, v1, wallH);
         }
       }
-      // South neighbor
+      // South
       if (z + 1 < rows) {
         const hS = heightmap[z + 1][x] * maxHeight;
         if (hS < h) {
-          pushQuad(wx1, h, wz1, wx, h, wz1, wx, hS, wz1, wx1, hS, wz1, 0, 0, 1, u0, v1, u1, v1);
+          const wallH = (h - hS) / cellSize;
+          pushQuad(wx1, h, wz1, wx, h, wz1, wx, hS, wz1, wx1, hS, wz1, 0, 0, 1, u0, 0, u1, wallH);
         }
       }
       // North
       if (z > 0) {
         const hN = heightmap[z - 1][x] * maxHeight;
         if (hN < h) {
-          pushQuad(wx, h, wz, wx1, h, wz, wx1, hN, wz, wx, hN, wz, 0, 0, -1, u0, v0, u1, v0);
+          const wallH = (h - hN) / cellSize;
+          pushQuad(wx, h, wz, wx1, h, wz, wx1, hN, wz, wx, hN, wz, 0, 0, -1, u0, 0, u1, wallH);
         }
       }
     }
