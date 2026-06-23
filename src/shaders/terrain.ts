@@ -43,13 +43,22 @@ uniform float u_fogFar;
 uniform int u_hardBlend; // 1 = hard texture transitions (dungeons), 0 = smooth (overworld)
 uniform vec3 u_cameraPos;
 
-// Splatmap textures (bound when available)
+// Splatmap textures (single-biome fallback)
 uniform sampler2D u_texLow;
 uniform sampler2D u_texMid;
 uniform sampler2D u_texSteep;
 uniform sampler2D u_texHigh;
+// Biome texture arrays (indexed approach)
+uniform highp sampler2DArray u_biomeArrayLow;
+uniform highp sampler2DArray u_biomeArrayMid;
+uniform highp sampler2DArray u_biomeArraySteep;
+uniform highp sampler2DArray u_biomeArrayHigh;
+uniform sampler2D u_biomeIndex;     // R channel = biome index (0-1 mapped to layer)
+uniform int u_useBiomeArray;
+uniform int u_biomeCount;
 uniform int u_useSplatmap;
 uniform float u_waterHeightNorm;
+uniform vec2 u_worldSize;
 
 in vec3 v_normal;
 in vec2 v_uv;
@@ -91,13 +100,38 @@ void main() {
       highWeight *= (1.0 - rockWeight);
     }
 
-    // Sample all textures at tiled UV
-    vec3 colLow = texture(u_texLow, v_uv).rgb;
-    vec3 colMid = texture(u_texMid, v_uv).rgb;
-    vec3 colSteep = texture(u_texSteep, v_uv).rgb;
-    vec3 colHigh = texture(u_texHigh, v_uv).rgb;
+    // Biome texture sampling
+    if (u_useBiomeArray == 1 && u_worldSize.x > 0.0) {
+      // Index-based biome blending using texture arrays
+      // R = primary biome, G = secondary biome, B = blend factor
+      vec2 biomeUV = v_worldPos.xz / u_worldSize;
+      vec3 biomeData = texture(u_biomeIndex, biomeUV).rgb;
+      float layerA = floor(biomeData.r * float(u_biomeCount - 1) + 0.5);
+      float layerB = floor(biomeData.g * float(u_biomeCount - 1) + 0.5);
+      float blend = biomeData.b;
 
-    texColor = colLow * lowWeight + colMid * midWeight + colSteep * rockWeight + colHigh * highWeight;
+      vec3 colA = texture(u_biomeArrayLow, vec3(v_uv, layerA)).rgb * lowWeight
+                + texture(u_biomeArrayMid, vec3(v_uv, layerA)).rgb * midWeight
+                + texture(u_biomeArraySteep, vec3(v_uv, layerA)).rgb * rockWeight
+                + texture(u_biomeArrayHigh, vec3(v_uv, layerA)).rgb * highWeight;
+
+      if (blend > 0.01) {
+        vec3 colB = texture(u_biomeArrayLow, vec3(v_uv, layerB)).rgb * lowWeight
+                  + texture(u_biomeArrayMid, vec3(v_uv, layerB)).rgb * midWeight
+                  + texture(u_biomeArraySteep, vec3(v_uv, layerB)).rgb * rockWeight
+                  + texture(u_biomeArrayHigh, vec3(v_uv, layerB)).rgb * highWeight;
+        texColor = mix(colA, colB, blend);
+      } else {
+        texColor = colA;
+      }
+    } else {
+      // Fallback: single texture set
+      vec3 colLow = texture(u_texLow, v_uv).rgb;
+      vec3 colMid = texture(u_texMid, v_uv).rgb;
+      vec3 colSteep = texture(u_texSteep, v_uv).rgb;
+      vec3 colHigh = texture(u_texHigh, v_uv).rgb;
+      texColor = colLow * lowWeight + colMid * midWeight + colSteep * rockWeight + colHigh * highWeight;
+    }
   } else {
     texColor = texture(u_texture, v_uv).rgb;
   }

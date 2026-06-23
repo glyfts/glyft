@@ -44,6 +44,22 @@ export interface TerrainConfig {
     /** High elevations (default: snow) */
     high: WebGLTexture;
   };
+  /** Biome texture arrays — one TEXTURE_2D_ARRAY per splatmap role, layers = biomes */
+  biomeArrays?: { low: WebGLTexture; mid: WebGLTexture; steep: WebGLTexture; high: WebGLTexture };
+  /** Biome index map — R channel = biome index (0-1 mapped to 0..biomeCount-1) */
+  biomeIndex?: WebGLTexture;
+  /** Number of biome layers in the arrays */
+  biomeCount?: number;
+  /** Ambient light color [r,g,b] 0-1 */
+  ambientColor?: [number, number, number];
+  /** Directional light color [r,g,b] 0-1 */
+  lightColor?: [number, number, number];
+  /** Fog color [r,g,b] 0-1. Updated at runtime for zone transitions. */
+  fogColor?: [number, number, number];
+  /** Fog near distance in world units */
+  fogNear?: number;
+  /** Fog far distance in world units */
+  fogFar?: number;
   /** Water surface height in world units. Set to render a water plane. */
   waterHeight?: number;
   /** Hard texture transitions (no blending). Good for dungeons. */
@@ -94,6 +110,10 @@ export interface TerrainSystem {
   setSplatTextures(textures: TerrainConfig['splatTextures']): void;
   /** Toggle hard texture blending (sharp cutoffs for dungeons) */
   setHardBlend(enabled: boolean): void;
+  /** Set lighting at runtime (day/night cycle) */
+  setLighting(ambient: [number, number, number], light: [number, number, number]): void;
+  /** Set fog parameters at runtime */
+  setFog(color: [number, number, number], near?: number, far?: number): void;
   /** Toggle stepped terrain (flat cells with vertical walls, no slopes) */
   setStepped(enabled: boolean): void;
   /** Get terrain dimensions in world units */
@@ -358,7 +378,10 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
     [
       'u_mvp', 'u_texture', 'u_lightDir', 'u_ambientColor', 'u_lightColor',
       'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_cameraPos', 'u_maxHeight',
-      'u_texLow', 'u_texMid', 'u_texSteep', 'u_texHigh', 'u_useSplatmap', 'u_waterHeightNorm', 'u_hardBlend',
+      'u_texLow', 'u_texMid', 'u_texSteep', 'u_texHigh',
+      'u_biomeArrayLow', 'u_biomeArrayMid', 'u_biomeArraySteep', 'u_biomeArrayHigh',
+      'u_biomeIndex', 'u_useBiomeArray', 'u_biomeCount',
+      'u_useSplatmap', 'u_waterHeightNorm', 'u_hardBlend', 'u_worldSize',
     ],
     ['a_position', 'a_normal', 'a_uv'],
   );
@@ -376,6 +399,66 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
   let waterShader: ReturnType<typeof compileShader> | null = null;
   let waterVAO: WebGLVertexArrayObject | null = null;
   let waterVBO: WebGLBuffer | null = null;
+
+  // Sand floor plane (rendered below water, extends to horizon)
+  const floorVS = /*glsl*/`#version 300 es
+  precision highp float;
+  layout(location = 0) in vec2 a_position;
+  uniform mat4 u_mvp;
+  uniform vec2 u_worldSize;
+  uniform float u_height;
+  out vec2 v_uv;
+  out vec3 v_worldPos;
+  void main() {
+    float scale = 4.0;
+    float offsetX = u_worldSize.x * (1.0 - scale) * 0.5;
+    float offsetZ = u_worldSize.y * (1.0 - scale) * 0.5;
+    vec3 pos = vec3(
+      a_position.x * u_worldSize.x * scale + offsetX,
+      u_height,
+      a_position.y * u_worldSize.y * scale + offsetZ
+    );
+    v_uv = a_position * 16.0 * scale;
+    v_worldPos = pos;
+    gl_Position = u_mvp * vec4(pos, 1.0);
+  }`;
+  const floorFS = /*glsl*/`#version 300 es
+  precision highp float;
+  uniform sampler2D u_texture;
+  uniform vec3 u_cameraPos;
+  uniform vec3 u_fogColor;
+  uniform float u_fogNear;
+  uniform float u_fogFar;
+  in vec2 v_uv;
+  in vec3 v_worldPos;
+  out vec4 fragColor;
+  void main() {
+    vec3 col = texture(u_texture, v_uv).rgb * 0.7; // Slightly darkened sand
+    float dist = distance(v_worldPos, u_cameraPos);
+    float fogFactor = clamp((dist - u_fogNear) / (u_fogFar - u_fogNear), 0.0, 1.0);
+    col = mix(col, u_fogColor, fogFactor);
+    fragColor = vec4(col, 1.0);
+  }`;
+
+  let floorShader: ReturnType<typeof compileShader> | null = null;
+  let floorVAO: WebGLVertexArrayObject | null = null;
+
+  if (waterHeight != null) {
+    floorShader = compileShader(gl, floorVS, floorFS,
+      ['u_mvp', 'u_worldSize', 'u_height', 'u_texture', 'u_cameraPos', 'u_fogColor', 'u_fogNear', 'u_fogFar'],
+      ['a_position'],
+    );
+
+    const quadVerts = new Float32Array([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1]);
+    floorVAO = gl.createVertexArray()!;
+    gl.bindVertexArray(floorVAO);
+    const floorVBO = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, floorVBO);
+    gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+  }
 
   if (waterHeight != null) {
     waterShader = compileShader(gl, waterVertexShader, waterFragmentShader,
@@ -447,6 +530,20 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
         gl.activeTexture(gl.TEXTURE4);
         gl.bindTexture(gl.TEXTURE_2D, config.splatTextures.high);
         gl.uniform1i(shader.uniforms.u_texHigh, 4);
+
+        // Biome texture arrays (indexed approach)
+        if (config.biomeArrays && config.biomeIndex) {
+          gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D_ARRAY, config.biomeArrays.low); gl.uniform1i(shader.uniforms.u_biomeArrayLow, 5);
+          gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D_ARRAY, config.biomeArrays.mid); gl.uniform1i(shader.uniforms.u_biomeArrayMid, 6);
+          gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D_ARRAY, config.biomeArrays.steep); gl.uniform1i(shader.uniforms.u_biomeArraySteep, 7);
+          gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D_ARRAY, config.biomeArrays.high); gl.uniform1i(shader.uniforms.u_biomeArrayHigh, 8);
+          gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, config.biomeIndex); gl.uniform1i(shader.uniforms.u_biomeIndex, 9);
+          gl.uniform1i(shader.uniforms.u_useBiomeArray, 1);
+          gl.uniform1i(shader.uniforms.u_biomeCount, config.biomeCount || 2);
+          gl.uniform2f(shader.uniforms.u_worldSize, worldWidth, worldDepth);
+        } else {
+          gl.uniform1i(shader.uniforms.u_useBiomeArray, 0);
+        }
       } else {
         gl.uniform1i(shader.uniforms.u_useSplatmap, 0);
         gl.activeTexture(gl.TEXTURE0);
@@ -457,13 +554,16 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       // Directional light (sun from above-right)
       const lightDir = vec3Normalize(vec3(0.3, 1.0, 0.5));
       gl.uniform3fv(shader.uniforms.u_lightDir, lightDir);
-      gl.uniform3f(shader.uniforms.u_ambientColor, 0.3, 0.3, 0.35);
-      gl.uniform3f(shader.uniforms.u_lightColor, 1.0, 0.95, 0.85);
+      const ac = config.ambientColor || [0.3, 0.3, 0.35];
+      const lc = config.lightColor || [1.0, 0.95, 0.85];
+      gl.uniform3f(shader.uniforms.u_ambientColor, ac[0], ac[1], ac[2]);
+      gl.uniform3f(shader.uniforms.u_lightColor, lc[0], lc[1], lc[2]);
 
-      // Fog
-      gl.uniform3f(shader.uniforms.u_fogColor, 0.6, 0.7, 0.85);
-      gl.uniform1f(shader.uniforms.u_fogNear, camera.far * 0.5);
-      gl.uniform1f(shader.uniforms.u_fogFar, camera.far);
+      // Fog (read from config, allows runtime changes)
+      const fc = config.fogColor || [0.6, 0.7, 0.85];
+      gl.uniform3f(shader.uniforms.u_fogColor, fc[0], fc[1], fc[2]);
+      gl.uniform1f(shader.uniforms.u_fogNear, config.fogNear ?? camera.far * 0.5);
+      gl.uniform1f(shader.uniforms.u_fogFar, config.fogFar ?? camera.far);
       gl.uniform3fv(shader.uniforms.u_cameraPos, camera.position);
 
       // Draw terrain
@@ -474,6 +574,25 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
         gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_INT, 0);
       }
       gl.bindVertexArray(null);
+
+      // Draw sand floor plane (below water, extends to horizon)
+      if (floorShader && floorVAO && waterHeight != null && config.splatTextures?.low) {
+        gl.useProgram(floorShader.program);
+        gl.uniformMatrix4fv(floorShader.uniforms.u_mvp, false, vp);
+        gl.uniform2f(floorShader.uniforms.u_worldSize, worldWidth, worldDepth);
+        gl.uniform1f(floorShader.uniforms.u_height, waterHeight * 0.6); // Sit below water
+        gl.uniform3fv(floorShader.uniforms.u_cameraPos, camera.position);
+        gl.uniform3f(floorShader.uniforms.u_fogColor, fc[0], fc[1], fc[2]);
+        gl.uniform1f(floorShader.uniforms.u_fogNear, camera.far * 0.3);
+        gl.uniform1f(floorShader.uniforms.u_fogFar, camera.far * 0.7);
+        // Bind sand texture
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, config.splatTextures!.low);
+        gl.uniform1i(floorShader.uniforms.u_texture, 0);
+        gl.bindVertexArray(floorVAO);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.bindVertexArray(null);
+      }
 
       // Draw water plane
       if (waterShader && waterVAO && waterHeight != null) {
@@ -489,7 +608,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
         gl.uniform1f(waterShader.uniforms.u_waterHeight, waterHeight);
         gl.uniform1f(waterShader.uniforms.u_time, time);
         gl.uniform3fv(waterShader.uniforms.u_cameraPos, camera.position);
-        gl.uniform3f(waterShader.uniforms.u_fogColor, 0.6, 0.7, 0.85);
+        gl.uniform3f(waterShader.uniforms.u_fogColor, fc[0], fc[1], fc[2]);
         gl.uniform1f(waterShader.uniforms.u_fogNear, camera.far * 0.5);
         gl.uniform1f(waterShader.uniforms.u_fogFar, camera.far);
 
@@ -549,6 +668,17 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
     setSplatTextures(textures: TerrainConfig['splatTextures']) {
       config.splatTextures = textures;
+    },
+
+    setLighting(ambient: [number, number, number], light: [number, number, number]) {
+      config.ambientColor = ambient;
+      config.lightColor = light;
+    },
+
+    setFog(color: [number, number, number], near?: number, far?: number) {
+      config.fogColor = color;
+      if (near !== undefined) config.fogNear = near;
+      if (far !== undefined) config.fogFar = far;
     },
 
     setHardBlend(enabled: boolean) {
