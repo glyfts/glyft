@@ -976,8 +976,9 @@ export class GlyftEngine {
         return tilemap.data[i] - 1; // -1 to undo +1 offset (empty = -1)
       },
 
-      fill: (x: number, y: number, w: number, h: number, tileIndex: number) => {
+      fill: (x: number, y: number, w: number, h: number, tileIndex: number, animFrames?: number) => {
         const stored = tileIndex + 1;
+        const anim = animFrames ?? 0;
         for (let dy = 0; dy < h; dy++) {
           for (let dx = 0; dx < w; dx++) {
             const tx = x + dx;
@@ -985,9 +986,17 @@ export class GlyftEngine {
             if (tx >= 0 && tx < tilemap.width && ty >= 0 && ty < tilemap.height) {
               const i = (ty * tilemap.width + tx) * 4;
               tilemap.data[i] = stored;
+              tilemap.data[i + 2] = anim;
             }
           }
         }
+        tilemap.dirty = true;
+      },
+
+      setAnim: (x: number, y: number, animFrames: number) => {
+        if (x < 0 || x >= tilemap.width || y < 0 || y >= tilemap.height) return;
+        const i = (y * tilemap.width + x) * 4;
+        tilemap.data[i + 2] = animFrames;
         tilemap.dirty = true;
       },
 

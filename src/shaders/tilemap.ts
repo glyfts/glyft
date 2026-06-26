@@ -70,6 +70,13 @@ void main() {
   // Convert back to 0-based tile index
   int tileIndex = rawIndex - 1;
 
+  // Animated tiles: B channel = number of animation frames (0 = static)
+  int animFrames = int(tileData.b * 255.0);
+  if (animFrames > 1) {
+    int animFrame = int(mod(u_time * 4.0, float(animFrames)));
+    tileIndex += animFrame;
+  }
+
   // Calculate tile position in atlas
   int tileX = tileIndex % u_tilesPerRow;
   int tileY = tileIndex / u_tilesPerRow;

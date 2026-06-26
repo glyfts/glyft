@@ -856,7 +856,9 @@ export interface TileMap {
   /** Get tile at position */
   get(x: number, y: number): number;
   /** Fill rectangle with tile */
-  fill(x: number, y: number, w: number, h: number, tileIndex: number): void;
+  fill(x: number, y: number, w: number, h: number, tileIndex: number, animFrames?: number): void;
+  /** Set animation frame count for a tile (0 = static, N = cycle through N consecutive tiles) */
+  setAnim(x: number, y: number, animFrames: number): void;
   /** Set region from 2D array */
   setRegion(x: number, y: number, data: number[][]): void;
   /** Set collision flag */
