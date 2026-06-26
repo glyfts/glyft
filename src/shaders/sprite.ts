@@ -21,10 +21,10 @@ layout(location = 0) in vec2 a_position;  // 0,0 to 1,1
 // Per-instance
 layout(location = 1) in vec4 a_posVel;    // x, y, vx, vy
 layout(location = 2) in vec4 a_frame;     // u, v, w, h (base frame in atlas)
-layout(location = 3) in vec4 a_props;     // rotation, scale, alpha, tint (packed)
+layout(location = 3) in vec4 a_props;     // rotation, scaleX, alpha, tint (packed)
 layout(location = 4) in vec4 a_anim;      // idleFrames, walkFrames, fps, flags
 layout(location = 5) in vec4 a_glow;      // intensity, color (packed), radius, shadowOffsetY
-layout(location = 6) in vec4 a_shadow;    // scale, alpha, visualOffsetY, unused
+layout(location = 6) in vec4 a_shadow;    // scale, alpha, visualOffsetY, scaleY
 
 // Uniforms
 uniform mat3 u_projection;
@@ -84,7 +84,9 @@ void main() {
   vec2 baseFramePos = a_frame.xy;
   vec2 frameSize = a_frame.zw;
   float rotation = a_props.x;
-  float scale = a_props.y;
+  float scaleX = a_props.y;
+  float scaleY = a_shadow.w;
+  vec2 sprScale = vec2(scaleX, scaleY);
   v_alpha = a_props.z;
   v_tint = unpackTint(a_props.w);
 
@@ -174,7 +176,7 @@ void main() {
     }
 
     // Expand the quad by glowRadius
-    float expandedScale = scale * glowRadius;
+    vec2 expandedScale = sprScale * glowRadius;
     vec2 localPos = a_position * frameSize * expandedScale;
     vec2 center = frameSize * expandedScale * 0.5;
     vec2 centered = localPos - center;
@@ -186,7 +188,7 @@ void main() {
     ) + center;
 
     // Offset to center the expanded quad on the original sprite
-    vec2 expandOffset = frameSize * scale * 0.5 - frameSize * expandedScale * 0.5;
+    vec2 expandOffset = frameSize * sprScale * 0.5 - frameSize * expandedScale * 0.5;
 
     float bobOffset = 0.0;
     if (bobAmplitude > 0.0) {
@@ -219,14 +221,14 @@ void main() {
     float shadowAlpha = a_shadow.y;
     // Shadow expands when sprite is higher, shrinks when lower
     float shadowExpand = 1.0 + bobOffset * 0.04;
-    float shadowW = frameSize.x * scale * 0.8 * shadowExpand * shadowScale;
-    float shadowH = frameSize.x * scale * 0.25 * shadowExpand * shadowScale;
+    float shadowW = frameSize.x * scaleX * 0.8 * shadowExpand * shadowScale;
+    float shadowH = frameSize.x * scaleX * 0.25 * shadowExpand * shadowScale;
     vec2 shadowLocal = a_position * vec2(shadowW, shadowH);
     // Center shadow under sprite base (top of shadow aligns with sprite bottom)
     // shadowOffsetY allows adjusting shadow position for sprites where feet aren't at frame bottom
     float shadowOffsetY = a_glow.w;
-    float offsetX = (frameSize.x * scale - shadowW) * 0.5;
-    float offsetY = frameSize.y * scale + shadowOffsetY;
+    float offsetX = (frameSize.x * scaleX - shadowW) * 0.5;
+    float offsetY = frameSize.y * scaleY + shadowOffsetY;
     vec2 worldPos = pos + vec2(offsetX, offsetY) + shadowLocal - u_cameraPos;
     // Fade shadow when sprite is high (farther from ground), multiplied by shadowAlpha
     v_alpha = clamp(1.0 - bobOffset * 0.03, 0.5, 1.0) * shadowAlpha;
@@ -234,8 +236,8 @@ void main() {
     gl_Position = vec4(projected.xy, 0.0, 1.0);
   } else {
     // Normal pass: sprite with rotation and bob offset
-    vec2 localPos = a_position * frameSize * scale;
-    vec2 center = frameSize * scale * 0.5;
+    vec2 localPos = a_position * frameSize * sprScale;
+    vec2 center = frameSize * sprScale * 0.5;
     vec2 centered = localPos - center;
     float c = cos(rotation);
     float s = sin(rotation);
@@ -254,7 +256,7 @@ void main() {
 
     // Sink sprite down when clipping bottom (e.g., wading in water)
     if (clipBottom > 0.0) {
-      worldPos.y += clipBottom * frameSize.y * scale;
+      worldPos.y += clipBottom * frameSize.y * scaleY;
     }
 
     // Apply visual Y offset (moves sprite without affecting collision)

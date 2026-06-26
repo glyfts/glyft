@@ -536,8 +536,14 @@ export interface Sprite {
   /** Rotation in radians (used by '1dir' sprites, or for effects) */
   rotation: number;
 
-  /** Uniform scale factor (1.0 = normal size) */
+  /** Uniform scale factor (1.0 = normal size). Sets both scaleX and scaleY. */
   scale: number;
+
+  /** Horizontal scale factor (1.0 = normal width) */
+  scaleX: number;
+
+  /** Vertical scale factor (1.0 = normal height) */
+  scaleY: number;
 
   /** Opacity from 0 (invisible) to 1 (opaque) */
   alpha: number;

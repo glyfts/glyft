@@ -61,6 +61,8 @@ interface InternalSprite {
   vy: number;
   rotation: number;
   scale: number;
+  scaleX: number;
+  scaleY: number;
   alpha: number;
   tint: number;
   flipX: boolean;
@@ -1095,6 +1097,8 @@ export class GlyftEngine {
       vy: 0,
       rotation: 0,
       scale: 1,
+      scaleX: 1,
+      scaleY: 1,
       alpha: 1,
       tint: 0xffffff,
       flipX: false,
@@ -1203,7 +1207,11 @@ export class GlyftEngine {
       get rotation() { return sprite.rotation; },
       set rotation(v: number) { sprite.rotation = v; },
       get scale() { return sprite.scale; },
-      set scale(v: number) { sprite.scale = v; },
+      set scale(v: number) { sprite.scale = v; sprite.scaleX = v; sprite.scaleY = v; },
+      get scaleX() { return sprite.scaleX; },
+      set scaleX(v: number) { sprite.scaleX = v; },
+      get scaleY() { return sprite.scaleY; },
+      set scaleY(v: number) { sprite.scaleY = v; },
       get alpha() { return sprite.alpha; },
       set alpha(v: number) { sprite.alpha = v; },
       get tint() { return sprite.tint; },
@@ -2787,9 +2795,9 @@ export class GlyftEngine {
         instanceData[offset + 14] = sprite.fps;
       }
 
-      // a_props: rotation, scale, alpha, tint (packed)
+      // a_props: rotation, scaleX, alpha, tint (packed)
       instanceData[offset + 8] = sprite.rotation;
-      instanceData[offset + 9] = sprite.scale;
+      instanceData[offset + 9] = sprite.scaleX;
       instanceData[offset + 10] = sprite.alpha;
 
       // Pack tint as uint32 bits into float (reuse buffer to avoid allocation)
@@ -2805,11 +2813,11 @@ export class GlyftEngine {
       instanceData[offset + 18] = sprite.glowRadius;
       instanceData[offset + 19] = sprite.shadowOffsetY;
 
-      // a_shadow: scale, alpha, visualOffsetY, unused
+      // a_shadow: scale, alpha, visualOffsetY, scaleY
       instanceData[offset + 20] = sprite.shadowScale;
       instanceData[offset + 21] = sprite.shadowAlpha;
       instanceData[offset + 22] = sprite.visualOffsetY;
-      instanceData[offset + 23] = 0;  // Reserved
+      instanceData[offset + 23] = sprite.scaleY;
     }
 
     // Bind VAO and update instance buffer
