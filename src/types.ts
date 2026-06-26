@@ -155,8 +155,8 @@ export interface StatDef {
 export interface SfxDef {
   /** Oscillator waveform (default: 'square') */
   wave?: 'sine' | 'square' | 'sawtooth' | 'triangle';
-  /** Base frequency in Hz, or [min, max] for random (default: 440) */
-  freq?: number | [number, number];
+  /** Base frequency in Hz, [min, max] for random, or [f1, f2, ...] for multi-step sweep (default: 440) */
+  freq?: number | number[];
   /** Duration in seconds (default: 0.1) */
   duration?: number;
   /** Frequency to sweep to over sweepTime (pitch bend) */

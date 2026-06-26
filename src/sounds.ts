@@ -127,9 +127,10 @@ export function createSoundManager(initialViewportWidth: number): SoundManager {
   }
 
   // Get random value from range or single value
-  function _randomize(value: number | [number, number]): number {
+  function _randomize(value: number | number[]): number {
     if (Array.isArray(value)) {
-      return value[0] + Math.random() * (value[1] - value[0]);
+      if (value.length === 2) return value[0] + Math.random() * (value[1] - value[0]);
+      return value[0]; // Multi-step arrays return first element as base
     }
     return value;
   }
@@ -192,7 +193,17 @@ export function createSoundManager(initialViewportWidth: number): SoundManager {
     if (def.detune) osc.detune.value = def.detune;
 
     // Frequency + optional sweep
-    if (def.sweep !== undefined) {
+    const freqSteps = Array.isArray(def.freq) && def.freq.length > 2 ? def.freq : null;
+    if (freqSteps) {
+      // Multi-step frequency sweep: schedule ramps through each frequency
+      const stepTime = duration / (freqSteps.length - 1);
+      osc.frequency.setValueAtTime(Math.max(freqSteps[0] * pitch, 1), now);
+      for (let fi = 1; fi < freqSteps.length; fi++) {
+        osc.frequency.exponentialRampToValueAtTime(
+          Math.max(freqSteps[fi] * pitch, 1), now + stepTime * fi
+        );
+      }
+    } else if (def.sweep !== undefined) {
       const sweepTime = def.sweepTime ?? duration;
       osc.frequency.setValueAtTime(baseFreq, now);
       osc.frequency.exponentialRampToValueAtTime(
