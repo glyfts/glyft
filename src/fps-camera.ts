@@ -57,6 +57,7 @@ export class FPSCamera {
   // Input state
   private keys = new Set<string>();
   private pressedThisFrame = new Set<string>();
+  private framePressed = new Set<string>(); // snapshot for game to read
   private consumed = new Set<string>();
   private mouseDX = 0;
   private mouseDY = 0;
@@ -65,7 +66,6 @@ export class FPSCamera {
   // Head bob state
   private bobPhase = 0;
   private bobActive = false;
-  private needsClear = false;
 
   // Listeners (stored for cleanup)
   private canvas: HTMLCanvasElement | null = null;
@@ -186,7 +186,7 @@ export class FPSCamera {
   /** Check if a key was pressed this frame (single-shot). */
   wasPressed(key: string): boolean {
     const k = key.toLowerCase();
-    return this.pressedThisFrame.has(k) && !this.consumed.has(k);
+    return this.framePressed.has(k) && !this.consumed.has(k);
   }
 
   /** Consume a key press so it won't trigger again until re-pressed. */
@@ -204,11 +204,10 @@ export class FPSCamera {
    *   4. Call fps.updateCamera()
    */
   getMoveDelta(dt: number): [number, number] {
-    // Clear previous frame's pressed state (deferred so game can check wasPressed after getMoveDelta)
-    if (this.needsClear) {
-      this.pressedThisFrame.clear();
-      this.needsClear = false;
-    }
+    // Snapshot pressed keys for this frame, then clear the accumulator
+    this.framePressed.clear();
+    for (const k of this.pressedThisFrame) this.framePressed.add(k);
+    this.pressedThisFrame.clear();
 
     // Mouse look
     if (this.mouseDX !== 0 || this.mouseDY !== 0) {
@@ -255,9 +254,6 @@ export class FPSCamera {
       // Smoothly return to center
       this.bobPhase *= 0.9;
     }
-
-    // Mark for clearing next frame (so game can check wasPressed after this call)
-    this.needsClear = true;
 
     return [dx, dz];
   }
