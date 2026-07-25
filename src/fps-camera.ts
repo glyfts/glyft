@@ -65,6 +65,7 @@ export class FPSCamera {
   // Head bob state
   private bobPhase = 0;
   private bobActive = false;
+  private needsClear = false;
 
   // Listeners (stored for cleanup)
   private canvas: HTMLCanvasElement | null = null;
@@ -203,6 +204,12 @@ export class FPSCamera {
    *   4. Call fps.updateCamera()
    */
   getMoveDelta(dt: number): [number, number] {
+    // Clear previous frame's pressed state (deferred so game can check wasPressed after getMoveDelta)
+    if (this.needsClear) {
+      this.pressedThisFrame.clear();
+      this.needsClear = false;
+    }
+
     // Mouse look
     if (this.mouseDX !== 0 || this.mouseDY !== 0) {
       this.yaw += this.mouseDX * this.sensitivity;
@@ -249,8 +256,8 @@ export class FPSCamera {
       this.bobPhase *= 0.9;
     }
 
-    // Clear per-frame state
-    this.pressedThisFrame.clear();
+    // Mark for clearing next frame (so game can check wasPressed after this call)
+    this.needsClear = true;
 
     return [dx, dz];
   }
