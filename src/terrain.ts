@@ -396,6 +396,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
   const worldDepth = (rows - 1) * cellSize;
 
   // Water plane setup
+  let dummyArrayTex: WebGLTexture | null = null;
   let waterShader: ReturnType<typeof compileShader> | null = null;
   let waterVAO: WebGLVertexArrayObject | null = null;
   let waterVBO: WebGLBuffer | null = null;
@@ -546,9 +547,39 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
         }
       } else {
         gl.uniform1i(shader.uniforms.u_useSplatmap, 0);
+        gl.uniform1i(shader.uniforms.u_useBiomeArray, 0);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.uniform1i(shader.uniforms.u_texture, 0);
+
+        // Bind the same texture to splatmap samplers to prevent
+        // "two textures of different types" errors on some drivers
+        gl.uniform1i(shader.uniforms.u_texLow, 1);
+        gl.uniform1i(shader.uniforms.u_texMid, 2);
+        gl.uniform1i(shader.uniforms.u_texSteep, 3);
+        gl.uniform1i(shader.uniforms.u_texHigh, 4);
+        for (let i = 1; i <= 4; i++) {
+          gl.activeTexture(gl.TEXTURE0 + i);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+        }
+
+        // Bind dummy 2D array textures to biome sampler units
+        if (!dummyArrayTex) {
+          dummyArrayTex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D_ARRAY, dummyArrayTex);
+          gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]));
+        }
+        gl.uniform1i(shader.uniforms.u_biomeArrayLow, 5);
+        gl.uniform1i(shader.uniforms.u_biomeArrayMid, 6);
+        gl.uniform1i(shader.uniforms.u_biomeArraySteep, 7);
+        gl.uniform1i(shader.uniforms.u_biomeArrayHigh, 8);
+        for (let i = 5; i <= 8; i++) {
+          gl.activeTexture(gl.TEXTURE0 + i);
+          gl.bindTexture(gl.TEXTURE_2D_ARRAY, dummyArrayTex);
+        }
+        gl.uniform1i(shader.uniforms.u_biomeIndex, 9);
+        gl.activeTexture(gl.TEXTURE9);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
       }
 
       // Directional light (sun from above-right)
