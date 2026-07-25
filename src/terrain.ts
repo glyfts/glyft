@@ -388,7 +388,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
   // splatTextures read from config.splatTextures at render time (can be swapped)
 
-  const mesh = buildTerrainMesh(gl, heightmap, cellSize, maxHeight, textureRepeat);
+  const mesh = buildTerrainMesh(gl, heightmap, cellSize, maxHeight, textureRepeat, config.stepped);
 
   const rows = heightmap.length;
   const cols = heightmap[0].length;

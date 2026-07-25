@@ -73,6 +73,8 @@ export class FPSCamera {
   private onMouseMove: ((e: MouseEvent) => void) | null = null;
   private onPointerLock: (() => void) | null = null;
   private onClick: (() => void) | null = null;
+  private onMouseDown: ((e: MouseEvent) => void) | null = null;
+  private onMouseUp: ((e: MouseEvent) => void) | null = null;
 
   constructor(config?: FPSCameraConfig) {
     const c = config || {};
@@ -132,9 +134,27 @@ export class FPSCamera {
       }
     };
 
+    this.onMouseDown = (e: MouseEvent) => {
+      if (this.locked) {
+        const btn = e.button === 0 ? 'mouse1' : e.button === 2 ? 'mouse2' : `mouse${e.button}`;
+        if (!this.keys.has(btn)) {
+          this.pressedThisFrame.add(btn);
+        }
+        this.keys.add(btn);
+      }
+    };
+
+    this.onMouseUp = (e: MouseEvent) => {
+      const btn = e.button === 0 ? 'mouse1' : e.button === 2 ? 'mouse2' : `mouse${e.button}`;
+      this.keys.delete(btn);
+      this.consumed.delete(btn);
+    };
+
     document.addEventListener('keydown', this.onKeyDown);
     document.addEventListener('keyup', this.onKeyUp);
     document.addEventListener('mousemove', this.onMouseMove);
+    document.addEventListener('mousedown', this.onMouseDown);
+    document.addEventListener('mouseup', this.onMouseUp);
     document.addEventListener('pointerlockchange', this.onPointerLock);
     canvas.addEventListener('click', this.onClick);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -145,6 +165,8 @@ export class FPSCamera {
     if (this.onKeyDown) document.removeEventListener('keydown', this.onKeyDown);
     if (this.onKeyUp) document.removeEventListener('keyup', this.onKeyUp);
     if (this.onMouseMove) document.removeEventListener('mousemove', this.onMouseMove);
+    if (this.onMouseDown) document.removeEventListener('mousedown', this.onMouseDown);
+    if (this.onMouseUp) document.removeEventListener('mouseup', this.onMouseUp);
     if (this.onPointerLock) document.removeEventListener('pointerlockchange', this.onPointerLock);
     if (this.onClick && this.canvas) this.canvas.removeEventListener('click', this.onClick);
     this.canvas = null;
