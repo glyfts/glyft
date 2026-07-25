@@ -95,6 +95,10 @@ export type { BillboardSprite, BillboardAtlas, BillboardSystem } from './billboa
 export { createMeshSystem } from './mesh';
 export type { MeshPart, BuildingDef, BuildingInstance, MeshSystem } from './mesh';
 
+// First-person camera
+export { FPSCamera } from './fps-camera';
+export type { FPSCameraConfig } from './fps-camera';
+
 // 3D math utilities
 export { vec3, mat4Perspective, mat4LookAt, mat4Multiply, project } from './math3d';
 export type { Vec3, Mat4 } from './math3d';
