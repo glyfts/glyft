@@ -544,6 +544,23 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
           gl.uniform2f(shader.uniforms.u_worldSize, worldWidth, worldDepth);
         } else {
           gl.uniform1i(shader.uniforms.u_useBiomeArray, 0);
+          // Bind dummy array textures to prevent sampler type conflicts
+          if (!dummyArrayTex) {
+            dummyArrayTex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D_ARRAY, dummyArrayTex);
+            gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]));
+          }
+          gl.uniform1i(shader.uniforms.u_biomeArrayLow, 5);
+          gl.uniform1i(shader.uniforms.u_biomeArrayMid, 6);
+          gl.uniform1i(shader.uniforms.u_biomeArraySteep, 7);
+          gl.uniform1i(shader.uniforms.u_biomeArrayHigh, 8);
+          for (let i = 5; i <= 8; i++) {
+            gl.activeTexture(gl.TEXTURE0 + i);
+            gl.bindTexture(gl.TEXTURE_2D_ARRAY, dummyArrayTex);
+          }
+          gl.uniform1i(shader.uniforms.u_biomeIndex, 9);
+          gl.activeTexture(gl.TEXTURE9);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
         }
       } else {
         gl.uniform1i(shader.uniforms.u_useSplatmap, 0);
