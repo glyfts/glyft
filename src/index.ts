@@ -95,6 +95,14 @@ export type { BillboardSprite, BillboardAtlas, BillboardSystem } from './billboa
 export { createMeshSystem } from './mesh';
 export type { MeshPart, BuildingDef, BuildingInstance, MeshSystem } from './mesh';
 
+// Model system (loaded 3D models)
+export { createModelSystem } from './model';
+export type { ModelInstance, ModelSystem } from './model';
+
+// glTF loader
+export { loadGltf } from './loaders/gltf';
+export type { GltfModel, GltfPrimitive } from './loaders/gltf';
+
 // First-person camera
 export { FPSCamera } from './fps-camera';
 export type { FPSCameraConfig } from './fps-camera';
