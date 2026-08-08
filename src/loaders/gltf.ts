@@ -306,12 +306,93 @@ function loadImage(
   });
 }
 
+// ---- Node Transform ----
+
+type GltfNode = NonNullable<GltfJson['nodes']>[number];
+
+/** Build a 4x4 transform matrix from a glTF node's TRS or matrix */
+function nodeTransform(node: GltfNode): Float32Array {
+  if (node.matrix) {
+    return new Float32Array(node.matrix);
+  }
+
+  const m = new Float32Array(16);
+  m[0] = m[5] = m[10] = m[15] = 1;
+
+  // Scale
+  if (node.scale) {
+    const [sx, sy, sz] = node.scale;
+    m[0] = sx; m[5] = sy; m[10] = sz;
+  }
+
+  // Rotation (quaternion → matrix, applied to current)
+  if (node.rotation) {
+    const [qx, qy, qz, qw] = node.rotation;
+    const r = new Float32Array(16);
+    const x2 = qx + qx, y2 = qy + qy, z2 = qz + qz;
+    const xx = qx * x2, xy = qx * y2, xz = qx * z2;
+    const yy = qy * y2, yz = qy * z2, zz = qz * z2;
+    const wx = qw * x2, wy = qw * y2, wz = qw * z2;
+    r[0] = 1 - (yy + zz); r[1] = xy + wz;       r[2] = xz - wy;
+    r[4] = xy - wz;       r[5] = 1 - (xx + zz); r[6] = yz + wx;
+    r[8] = xz + wy;       r[9] = yz - wx;       r[10] = 1 - (xx + yy);
+    r[15] = 1;
+    // Multiply R * S (scale is already in m)
+    const rs = new Float32Array(16);
+    for (let col = 0; col < 4; col++) {
+      for (let row = 0; row < 4; row++) {
+        rs[col * 4 + row] =
+          r[row] * m[col * 4] + r[4 + row] * m[col * 4 + 1] +
+          r[8 + row] * m[col * 4 + 2] + r[12 + row] * m[col * 4 + 3];
+      }
+    }
+    rs.forEach((v, i) => m[i] = v);
+  }
+
+  // Translation
+  if (node.translation) {
+    m[12] = node.translation[0];
+    m[13] = node.translation[1];
+    m[14] = node.translation[2];
+  }
+
+  return m;
+}
+
+/** Apply a 4x4 matrix to position and normal arrays in-place */
+function applyTransform(
+  positions: Float32Array,
+  normals: Float32Array,
+  matrix: Float32Array,
+) {
+  const count = positions.length / 3;
+
+  for (let i = 0; i < count; i++) {
+    const px = positions[i * 3], py = positions[i * 3 + 1], pz = positions[i * 3 + 2];
+    positions[i * 3]     = matrix[0] * px + matrix[4] * py + matrix[8]  * pz + matrix[12];
+    positions[i * 3 + 1] = matrix[1] * px + matrix[5] * py + matrix[9]  * pz + matrix[13];
+    positions[i * 3 + 2] = matrix[2] * px + matrix[6] * py + matrix[10] * pz + matrix[14];
+  }
+
+  // Normals use the upper-left 3x3 (no translation), then renormalize
+  for (let i = 0; i < count; i++) {
+    const nx = normals[i * 3], ny = normals[i * 3 + 1], nz = normals[i * 3 + 2];
+    let tnx = matrix[0] * nx + matrix[4] * ny + matrix[8]  * nz;
+    let tny = matrix[1] * nx + matrix[5] * ny + matrix[9]  * nz;
+    let tnz = matrix[2] * nx + matrix[6] * ny + matrix[10] * nz;
+    const len = Math.sqrt(tnx * tnx + tny * tny + tnz * tnz);
+    if (len > 0) { tnx /= len; tny /= len; tnz /= len; }
+    normals[i * 3] = tnx; normals[i * 3 + 1] = tny; normals[i * 3 + 2] = tnz;
+  }
+}
+
 // ---- Main Loader ----
 
 /**
  * Load a glTF 2.0 or GLB file and extract mesh geometry and textures.
  *
  * Returns interleaved vertex data in Glyft's format: position(3) + normal(3) + uv(2).
+ * Applies node transforms (translation, rotation, scale) to vertex positions.
  * Generates normals if the model doesn't include them.
  * Only triangle primitives are supported.
  *
@@ -347,11 +428,24 @@ export async function loadGltf(url: string): Promise<GltfModel> {
     }
   }
 
+  // Build mesh-to-node-transform map by walking the node tree
+  const meshTransforms = new Map<number, Float32Array>();
+  if (json.nodes) {
+    for (const node of json.nodes) {
+      if (node.mesh !== undefined) {
+        meshTransforms.set(node.mesh, nodeTransform(node));
+      }
+    }
+  }
+
   // Extract mesh primitives
   const primitives: GltfPrimitive[] = [];
 
   if (json.meshes) {
-    for (const mesh of json.meshes) {
+    for (let meshIdx = 0; meshIdx < json.meshes.length; meshIdx++) {
+      const mesh = json.meshes[meshIdx];
+      const transform = meshTransforms.get(meshIdx);
+
       for (const prim of mesh.primitives) {
         if (prim.mode !== undefined && prim.mode !== 4) continue; // triangles only
 
@@ -373,6 +467,11 @@ export async function loadGltf(url: string): Promise<GltfModel> {
         const normals = prim.attributes.NORMAL !== undefined
           ? readFloats(json, buffers, prim.attributes.NORMAL)
           : generateNormals(positions, indices);
+
+        // Apply node transform to positions and normals
+        if (transform) {
+          applyTransform(positions, normals, transform);
+        }
 
         // UVs
         const uvs = prim.attributes.TEXCOORD_0 !== undefined
