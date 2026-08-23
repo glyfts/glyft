@@ -99,6 +99,10 @@ export type { MeshPart, BuildingDef, BuildingInstance, MeshSystem } from './mesh
 export { createModelSystem } from './model';
 export type { ModelInstance, ModelSystem } from './model';
 
+// Ocean wave system (Gerstner waves)
+export { sampleWaveHeight, sampleWaveNormal, waveParams, DEFAULT_WAVES } from './waves';
+export type { WaveDef } from './waves';
+
 // glTF loader
 export { loadGltf } from './loaders/gltf';
 export type { GltfModel, GltfPrimitive } from './loaders/gltf';
