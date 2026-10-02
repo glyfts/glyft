@@ -153,7 +153,9 @@ export function createWorldSystem(
   // Per-sprite state the 2D sprite doesn't carry
   const facing = new Map<string, number>();
   const prevPos = new Map<string, [number, number]>();
-  const jumps = new Map<string, { t: number; base: number }>();
+  // Airborne sprites (jumping or falling): absolute feet height and vertical speed, world units
+  const air = new Map<string, { y: number; vy: number; base: number }>();
+  const GRAVITY = 40;
   const groundY = new Map<string, number>();
   const tilt = new Map<string, [number, number]>();
   const membership = new Map<string, string>();
@@ -218,9 +220,17 @@ export function createWorldSystem(
     const wet = isWaterAt(wx, wz);
     if (blocked.has('water') && wet) return true;
     if (blocked.has('land') && !wet) return true;
-    const airborne = jumps.has(s.id);
-    if (blocked.has('steep') && !wet && !airborne && cur.terrain && cur.terrain.getNormal(wx, wz)[1] < maxSlope) return true;
-    if (blocked.has('buildings') && !airborne && (cur.meshes?.isBlocked(wx, wz) || cur.propBlocks(wx, wz))) return true;
+    const flying = air.get(s.id);
+    if (blocked.has('steep') && !wet && !flying && cur.terrain && cur.terrain.getNormal(wx, wz)[1] < maxSlope) return true;
+    if (blocked.has('buildings')) {
+      // A building is a wall unless you're already up on its roof or high enough to land on it
+      const roof = cur.meshes?.getTopHeight(wx, wz);
+      if (roof != null) {
+        const feet = flying ? flying.y : groundY.get(s.id) ?? -Infinity;
+        if (feet < roof - 0.3) return true;
+      }
+      if (!flying && cur.propBlocks(wx, wz)) return true;
+    }
     return false;
   }
 
@@ -397,7 +407,7 @@ export function createWorldSystem(
       s.vx = 0; s.vy = 0;
       prevPos.set(id, [s.x, s.y]);
       groundY.delete(id);
-      jumps.delete(id);
+      air.delete(id);
     }
     cur = next;
     cur.terrain?.setWaveScale(waves);
@@ -721,8 +731,9 @@ export function createWorldSystem(
       s.vy = mz * speed;
 
       const jump = ctrl.jump ?? 0;
-      if (jump > 0 && input.justPressed('Space') && !jumps.has(s.id)) {
-        jumps.set(s.id, { t: 0, base: s.elevation });
+      if (jump > 0 && input.justPressed('Space') && !air.has(s.id)) {
+        // Launch speed that peaks `jump` units above where you took off
+        air.set(s.id, { y: groundY.get(s.id) ?? 0, vy: Math.sqrt(2 * GRAVITY * jump), base: s.elevation });
       }
     },
 
@@ -779,12 +790,13 @@ export function createWorldSystem(
           }
         }
 
-        // Ground: roof when on or jumping onto a building, else terrain; water surface when floating
+        // Ground: a roof counts once you're on it or above it; otherwise terrain; water surface when floating
+        const prevGround = groundY.get(s.id);
+        const flying = air.get(s.id);
         let ground = terrainHeight(wx, wz);
         const roof = cur.meshes?.getTopHeight(wx, wz);
-        if (roof != null && (jumps.has(s.id) || (groundY.get(s.id) ?? -Infinity) >= roof - 0.3)) {
-          ground = Math.max(ground, roof);
-        }
+        const feet = flying ? flying.y : prevGround ?? -Infinity;
+        if (roof != null && feet >= roof - 0.3) ground = Math.max(ground, roof);
         const floats = isShip || s.floats || modelTypes.get(s.type)?.floats;
         if (floats && waterHeight != null && ground < waterHeight) {
           ground = cur.waterSurface(wx, wz);
@@ -797,13 +809,21 @@ export function createWorldSystem(
           tilt.delete(s.id);
         }
 
-        // Jump arc
-        const j = jumps.get(s.id);
-        if (j) {
-          const height = ctrl?.jump ?? 0;
-          j.t += dt / 0.5;
-          s.elevation = j.base + 4 * j.t * (1 - j.t) * height;
-          if (j.t >= 1) { s.elevation = j.base; jumps.delete(s.id); }
+        // Walking off a roof or ledge: fall instead of snapping down
+        if (!flying && prevGround !== undefined && prevGround - ground > 0.35 && !floats) {
+          air.set(s.id, { y: prevGround, vy: 0, base: s.elevation });
+        }
+        // Jumping and falling: absolute height under gravity; land when the feet reach the ground
+        const a = air.get(s.id);
+        if (a) {
+          a.vy -= GRAVITY * dt;
+          a.y += a.vy * dt;
+          if (a.y <= ground && a.vy <= 0) {
+            s.elevation = a.base;
+            air.delete(s.id);
+          } else {
+            s.elevation = a.base + Math.max(0, a.y - ground);
+          }
         }
         groundY.set(s.id, ground);
         if (isShip || modelTypes.has(s.type)) s.rotation = facing.get(s.id) ?? 0;
@@ -817,7 +837,7 @@ export function createWorldSystem(
           const s = sprites.get(id);
           if (s && s.exists) continue;
           if (!s && membership.has(id) && membership.get(id) !== cur.key) continue;
-          prevPos.delete(id); facing.delete(id); jumps.delete(id); groundY.delete(id);
+          prevPos.delete(id); facing.delete(id); air.delete(id); groundY.delete(id);
           tilt.delete(id); billboardCache.delete(id); membership.delete(id);
         }
       }
