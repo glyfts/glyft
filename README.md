@@ -261,6 +261,16 @@ await game.start();
 - **Zero assets:** built-in materials (`sand`, `grass`, `rock`, `snow`, `stone`, `brick`, `plaster`, `wood`, `planks`, `thatch`, `slate`, `door`, `window` and more). Any slot also takes a hex colour or an image URL.
 - **Runtime:** `game.world.time`, `wind`, `waves`, `riding`, `boardable`, `heightAt(x, y)`, `isWater(x, y)`, `pick(screenX, screenY)`, `findSpot(rule)`, `place(def)`.
 
+## Multiplayer
+
+One rule makes a game shared. Point `network` at a [Wyrt](https://wyrt.dev) server running its `wyrt_sync` module:
+
+```typescript
+network: { server: 'wss://your-server.example/sync', room: 'island', name: 'Ada' },
+```
+
+You move locally with no lag. Your position, facing, jumps, rides and swings go to everyone in the room, and other players appear as ordinary sprites with their names above them, blended between updates so they glide. Your collision rules, enemies and pickups stay local. In 3D the vehicles in `controller.board` are shared, and players in another area are hidden until you meet. `game.network` lists who's here and carries your own events (`send`, `on`).
+
 ## Examples
 
 ```bash

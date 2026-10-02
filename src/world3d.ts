@@ -79,6 +79,20 @@ export interface WorldSystem extends World {
   readonly fade: number;
   /** Who is riding what right now (sprite ids), for labels */
   readonly ride: { rider: string; vehicle: string } | null;
+  /** What this sprite rides (the player or another player), and whether it sits on top */
+  rideOf(id: string): { vehicle: string; mounted: boolean } | null;
+  /** Who rides this vehicle, if anyone */
+  riderOf(id: string): string | null;
+  /** Network: a sprite moved by its owner elsewhere (facing, absolute height, what it rides) */
+  setRemote(id: string, facing: number, height: number, ride: { vehicle: string; mounted: boolean } | null): void;
+  clearRemote(id: string): void;
+  /** Network: the player's facing and anything they ride, to send to others */
+  facingOf(id: string): number;
+  setFacing(id: string, facing: number): void;
+  /** Play the controller's attack frames on a sprite (another player's swing) */
+  playAttack(id: string): void;
+  /** Called when the player swings (controller.attack) */
+  onAttack(callback: () => void): void;
   /** Footprint in pixels for ship/model sprite types, or null for billboards */
   footprintOf(type: string): [number, number] | null;
   /** Load assets and build GPU resources for every area */
@@ -164,6 +178,14 @@ export function createWorldSystem(
   const modelInstances: ModelInstance[] = [];
   const shipInstances: ShipInstance[] = [];
   const areaListeners: ((area: string, label: string) => void)[] = [];
+  // Sprites another player moves: their facing, absolute height and ride come over the network
+  const remote = new Map<string, { f: number; h: number; ride: { vehicle: string; mounted: boolean } | null }>();
+  const attackListeners: (() => void)[] = [];
+
+  function rideOf(id: string): { vehicle: string; mounted: boolean } | null {
+    if (riding && riding.rider === id) return { vehicle: riding.vehicle, mounted: riding.mounted };
+    return remote.get(id)?.ride ?? null;
+  }
 
   // ---- Helpers (current area) ----
 
@@ -280,7 +302,7 @@ export function createWorldSystem(
     const rx = rider.x + rider.frameW / 2, ry = rider.y + rider.frameH / 2;
     let best: WorldSprite | null = null, bestD = Infinity;
     for (const s of sprites.values()) {
-      if (!s.exists || !board.vehicles.includes(s.type)) continue;
+      if (!s.exists || !board.vehicles.includes(s.type) || remote.has(s.id)) continue;
       const d = Math.hypot(s.x + s.frameW / 2 - rx, s.y + s.frameH / 2 - ry) - Math.max(s.frameW, s.frameH) / 2;
       if (d < range && d < bestD) { best = s; bestD = d; }
     }
@@ -334,6 +356,7 @@ export function createWorldSystem(
     if (!attacker) return;
     attackCooldown = attack.cooldown ?? 0.4;
     if (attack.frames) attackAnims.set(attacker.id, now);
+    for (const cb of attackListeners) cb();
     const id = hooks.spawn(attack.spawn, 0, 0);
     if (!id) return;
     membership.set(id, cur.key);
@@ -444,6 +467,26 @@ export function createWorldSystem(
     get ready() { return ready; },
     get fade() { return fade; },
     get ride() { return riding ? { rider: riding.rider, vehicle: riding.vehicle } : null; },
+    rideOf,
+    riderOf(id) {
+      if (riding && riding.vehicle === id) return riding.rider;
+      for (const [rider, r] of remote) if (r.ride?.vehicle === id) return rider;
+      return null;
+    },
+    setRemote(id, f, h, ride) {
+      const r = remote.get(id);
+      if (r) { r.f = f; r.h = h; r.ride = ride; }
+      else remote.set(id, { f, h, ride });
+    },
+    clearRemote(id) {
+      remote.delete(id);
+      prevPos.delete(id);
+      groundY.delete(id);
+    },
+    facingOf(id) { return facing.get(id) ?? 0; },
+    setFacing(id, f) { facing.set(id, f); },
+    playAttack(id) { if (attack?.frames) attackAnims.set(id, performance.now() / 1000); },
+    onAttack(cb) { attackListeners.push(cb); },
 
     get time() { return time; },
     set time(v: number) { time = ((v % 1) + 1) % 1; },
@@ -809,6 +852,17 @@ export function createWorldSystem(
           tilt.delete(s.id);
         }
 
+        // Another player's sprite: their client already worked out facing and height
+        const rem = remote.get(s.id);
+        if (rem) {
+          facing.set(s.id, rem.f);
+          air.delete(s.id);
+          s.elevation = 0;
+          groundY.set(s.id, ground);
+          if (isShip || modelTypes.has(s.type)) s.rotation = rem.f;
+          continue;
+        }
+
         // Walking off a roof or ledge: fall instead of snapping down
         if (!flying && prevGround !== undefined && prevGround - ground > 0.35 && !floats) {
           air.set(s.id, { y: prevGround, vy: 0, base: s.elevation });
@@ -838,7 +892,7 @@ export function createWorldSystem(
           if (s && s.exists) continue;
           if (!s && membership.has(id) && membership.get(id) !== cur.key) continue;
           prevPos.delete(id); facing.delete(id); air.delete(id); groundY.delete(id);
-          tilt.delete(id); billboardCache.delete(id); membership.delete(id);
+          tilt.delete(id); billboardCache.delete(id); membership.delete(id); remote.delete(id);
         }
       }
     },
@@ -849,6 +903,8 @@ export function createWorldSystem(
     },
 
     spriteHeight(s) {
+      const rem = remote.get(s.id);
+      if (rem) return rem.h;
       // A mounted rider sits on the mount: its height (jumps included) plus the seat
       if (riding?.mounted && s.id === riding.rider && lastSprites) {
         const v = lastSprites.get(riding.vehicle);
@@ -923,7 +979,9 @@ export function createWorldSystem(
       const hideForFps = rig.mode === 'fps' ? target : null;
 
       for (const s of sprites.values()) {
-        if (!s.exists || s === hideForFps || (riding && !riding.mounted && s.id === riding.rider)) continue;
+        if (!s.exists || s === hideForFps) continue;
+        const rideNow = rideOf(s.id);
+        if (rideNow && !rideNow.mounted) continue; // below deck
         if (attack && s.type === attack.spawn) continue; // hitboxes are invisible
         const [wx, wz] = footOf(s);
         const y = world.spriteHeight(s);
@@ -957,7 +1015,7 @@ export function createWorldSystem(
         b.x = wx; b.y = y; b.z = wz; b.facing = face;
         b.vx = s.vx * pxScale; b.vz = s.vy * pxScale; b.speed = Math.hypot(b.vx, b.vz);
         b.noShadow = false;
-        if (riding?.mounted && s.id === riding.rider) {
+        if (rideNow?.mounted) {
           b.noShadow = true; // the mount's shadow covers both
           // Same test the shader uses to pick the mount's row: only when the mount faces the camera is its
           // head nearer than the rider; from the side or behind, the rider draws in front

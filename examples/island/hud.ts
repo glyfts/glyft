@@ -33,6 +33,11 @@ export function createHud(game: Glyft, options: HudOptions): void {
     mapImage = drawAreaMap(game);
   });
 
+  // Comings and goings, when playing online
+  const notes: { text: string; t: number }[] = [];
+  game.network?.on('join', (p) => notes.push({ text: `${p!.name} arrived`, t: 0 }));
+  game.network?.on('leave', (p) => notes.push({ text: `${p!.name} left`, t: 0 }));
+
   game.onUpdate((dt) => {
     elapsed += dt;
     banner.t += dt;
@@ -50,6 +55,9 @@ export function createHud(game: Glyft, options: HudOptions): void {
     drawPlayerPanel(ctx, hp, maxHp, coins, options.coinsTotal, coinPop);
     drawMinimap(ctx, game, hero, mapImage);
     drawClock(ctx, world.area === 'island' ? world.time : null);
+    for (const n of notes) n.t += dt;
+    while (notes.length && notes[0].t > 5) notes.shift();
+    drawOnline(ctx, game, notes);
     drawBanner(ctx, banner.text, banner.t);
     drawPrompt(ctx, promptText(game, hero, labels));
     drawControls(ctx, elapsed);
@@ -195,6 +203,7 @@ function drawMinimap(ctx: CanvasRenderingContext2D, game: Glyft, hero: Sprite, m
   for (const e of game.getTagged('enemy')) dot(e.x + e.width / 2, e.y + e.height / 2, 2.6, '#ff4d5e');
   for (const s of game.getTagged('ship')) dot(s.x + s.width / 2, s.y + s.height / 2, 3, '#ffffff');
   for (const s of game.getTagged('mount')) dot(s.x + s.width / 2, s.y + s.height / 2, 3, '#c98a50');
+  for (const p of game.network?.players ?? []) if (p.sprite) dot(p.sprite.x + p.sprite.width / 2, p.sprite.y + p.sprite.height / 2, 3.4, '#6dff8e');
   for (const e of world.exits) {
     const [mx, my] = toMap(e.x, e.y);
     ctx.save(); ctx.translate(mx, my); ctx.rotate(Math.PI / 4);
@@ -238,6 +247,35 @@ function drawClock(ctx: CanvasRenderingContext2D, time: number | null): void {
   }
   ctx.fillStyle = '#ffffff'; ctx.textAlign = 'left';
   ctx.fillText(text, ix + 11, y + 4);
+}
+
+/** Who else is here, under the clock */
+function drawOnline(ctx: CanvasRenderingContext2D, game: Glyft, notes: { text: string; t: number }[]): void {
+  const net = game.network;
+  if (!net) return;
+  const x = MAP_CX;
+  let y = MAP_CY + MAP_R + 50;
+  const count = net.players.length + 1;
+  const text = net.connected ? `${count} online` : 'Offline';
+  ctx.font = `600 12px ${FONT}`;
+  const w = ctx.measureText(text).width + 34;
+  panel(ctx, x - w / 2, y - 12, w, 24, 12);
+  ctx.beginPath(); ctx.arc(x - w / 2 + 14, y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = net.connected ? '#6dff8e' : '#8a93a6'; ctx.fill();
+  ctx.fillStyle = '#ffffff'; ctx.textAlign = 'left';
+  ctx.fillText(text, x - w / 2 + 25, y + 4);
+  ctx.font = `600 11px ${FONT}`;
+  ctx.textAlign = 'right';
+  for (const n of notes) {
+    y += 22;
+    ctx.globalAlpha = Math.min(1, (5 - n.t) * 2);
+    ctx.fillStyle = 'rgba(14,18,28,0.6)';
+    const nw = ctx.measureText(n.text).width + 16;
+    ctx.fillRect(MAP_CX + MAP_R - nw, y - 9, nw, 18);
+    ctx.fillStyle = '#d8ffe2';
+    ctx.fillText(n.text, MAP_CX + MAP_R - 8, y + 4);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawBanner(ctx: CanvasRenderingContext2D, text: string, t: number): void {

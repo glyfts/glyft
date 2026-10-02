@@ -55,6 +55,8 @@ export type {
   AnimationDef,
   Handler,
   NetworkConfig,
+  Network,
+  NetworkPlayer,
   Sprite,
   Atlas,
   AtlasFrame,

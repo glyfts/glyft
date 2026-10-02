@@ -4,7 +4,8 @@
  * A 3D game written the 2D way: rules, not code. The config declares two
  * areas (an island and the cavern beneath it) joined by exits, the village,
  * trees and rocks, who spawns where, how enemies behave, what a sword swing
- * does, and how you board the boat. The only code loads the images and the HUD.
+ * does, how you board the boat, and the server that makes it multiplayer.
+ * The only code loads the images and the HUD.
  */
 
 import { Glyft, type GlyftConfig, type BuildingDef } from '../../src';
@@ -44,8 +45,23 @@ const stairs: BuildingDef = {
   door: [0, 1.9],
 };
 
+// Your name for other players, kept between visits
+const NAMES = ['Ada', 'Bram', 'Cwen', 'Dunstan', 'Edith', 'Frida', 'Godric', 'Hild', 'Ivo', 'Leofa', 'Osric', 'Wynn'];
+let playerName = localStorage.getItem('glyft-island-name');
+if (!playerName) {
+  playerName = `${NAMES[Math.floor(Math.random() * NAMES.length)]} ${Math.floor(Math.random() * 90 + 10)}`;
+  localStorage.setItem('glyft-island-name', playerName);
+}
+
+// Locally, run a Wyrt server with wyrt_sync; ?server= points anywhere else
+const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+const server = new URLSearchParams(location.search).get('server') ?? (local ? 'ws://localhost:8080' : 'wss://glyft.dev/sync');
+
 const config: GlyftConfig = {
   settings: { tileSize: 16, viewport: [960, 540], mode: '3d', spriteMode: '4dir' },
+
+  // Multiplayer: everyone on this island sees each other. Ride the horse, and it's gone from their field too.
+  network: { server, room: 'island', name: playerName },
 
   autoTags: { hero: ['player'], orc: ['enemy'], slime: ['enemy'], coin: ['pickup'], sloop: ['ship'], horse: ['mount'] },
   stats: { hp: { default: 100, max: 100 }, coins: { default: 0 } },

@@ -15,6 +15,7 @@ import type {
   CollisionAction,
   AnimationDef,
   SpritePointerEvent,
+  Network,
 } from './types';
 
 import {
@@ -48,6 +49,7 @@ import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
 import { backgroundVertexShader, backgroundFragmentShader } from './shaders/background';
 import { createWorldSystem, type WorldSystem } from './world3d';
 import { drawStarterAtlas } from './starter-art';
+import { createNetwork, type NetworkSystem } from './net';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -417,6 +419,45 @@ export class GlyftEngine {
 
   /** Sprites waiting in areas the player isn't in */
   private _stashed = new Map<string, InternalSprite>();
+
+  /** Multiplayer (config.network) */
+  private _net: NetworkSystem | null = null;
+  /** World-spawned sprites have the same key on every client (area/type/n), so they can be shared */
+  private _netKeys = new Map<string, string>();
+  private _netIds = new Map<string, string>();
+
+  /** Other players and your own events (null without config.network) */
+  get network(): Network | null {
+    return this._net;
+  }
+
+  private _startNetwork(): void {
+    const net = this.config.network;
+    if (!net || this._net) return;
+    if (!net.server) {
+      throw new GlyftError('network needs a server', "Set network.server to a Wyrt sync server, e.g. network: { server: 'wss://sync.glyft.dev' }");
+    }
+    const world = this._world;
+    const target = net.player ?? this.config.world?.controller?.sprite;
+    this._net = createNetwork(net, {
+      world,
+      findPlayer: () => {
+        if (!target) return undefined;
+        const byId = this._sprites.get(target);
+        if (byId?.exists) return this.getById(byId.id);
+        for (const s of this._sprites.values()) if (s.exists && s.type === target) return this.getById(s.id);
+        return undefined;
+      },
+      getById: (id) => this.getById(id),
+      spawn: (type) => this.spawn(type, 0, 0),
+      heightOf: (id) => {
+        const s = this._sprites.get(id);
+        return s && world ? world.spriteHeight(s) : 0;
+      },
+      keyOf: (id) => this._netKeys.get(id),
+      idOf: (key) => this._netIds.get(key),
+    });
+  }
 
   /** Backing pixels per viewport pixel (see settings.pixelRatio). */
   private _renderScale = 1;
@@ -1911,10 +1952,12 @@ export class GlyftEngine {
     if (this._worldLoad) {
       return this._worldLoad.then(() => {
         this._spawnWorld();
+        this._startNetwork();
         this._lastFrameTime = performance.now();
         this._loop();
       });
     }
+    this._startNetwork();
     this._loop();
     return Promise.resolve();
   }
@@ -1955,8 +1998,14 @@ export class GlyftEngine {
         `Load it before start(): await game.loadTexture('${type}', '${type}.png', { frameWidth: 32, frameHeight: 32 })`
       );
     };
+    const counts = new Map<string, number>();
     for (const plan of this._world.planSpawns(sizeOf)) {
       const sprite = this.spawn(plan.type, 0, 0);
+      const base = `${plan.area}/${plan.type}`;
+      const n = counts.get(base) ?? 0;
+      counts.set(base, n + 1);
+      this._netKeys.set(sprite.id, `${base}/${n}`);
+      this._netIds.set(`${base}/${n}`, sprite.id);
       sprite.x = plan.x - sprite.width / 2;
       sprite.y = plan.y - sprite.height / 2;
       sprite.rotation = plan.rotation;
@@ -2119,6 +2168,9 @@ export class GlyftEngine {
 
     // Addon: postPhysics (after collisions, before render)
     for (const addon of this._addons) addon.postPhysics?.(this._dt);
+
+    // Multiplayer: send your state, move everyone else
+    this._net?.update(this._dt);
 
     // Update floating text (expire old entries)
     this._floatTextManager.update(this._time);
@@ -2762,7 +2814,6 @@ export class GlyftEngine {
 
     // Labels and HP bars read sprite positions: feed them screen positions above each head
     const screen = this._labelScreen;
-    const ride = world.ride;
     for (const s of this._sprites.values()) {
       if (s.labelSlot < 0) continue;
       let entry = screen.get(s.id);
@@ -2771,11 +2822,12 @@ export class GlyftEngine {
         screen.set(s.id, entry);
       }
       // While riding, only the rider's name shows, above whatever is tallest (rider on a mount, the boat)
-      const vehicle = ride && s.id === ride.rider ? this._sprites.get(ride.vehicle) : undefined;
-      const hiddenVehicle = !!ride && s.id === ride.vehicle;
+      const rideNow = world.rideOf(s.id);
+      const vehicle = rideNow ? this._sprites.get(rideNow.vehicle) : undefined;
+      const hiddenVehicle = world.riderOf(s.id) !== null;
       let head = world.spriteHeight(s) + s.frameH * pxScale * s.scale;
       // (a ship's frame is its footprint, which overstates its height, so its label sits a bit lower)
-      if (vehicle) head = Math.max(head, world.spriteHeight(vehicle) + vehicle.frameH * pxScale * vehicle.scale * (vehicle.alpha > 0 && s.alpha === 0 ? 0.55 : 1));
+      if (vehicle) head = Math.max(head, world.spriteHeight(vehicle) + vehicle.frameH * pxScale * vehicle.scale * (rideNow!.mounted ? 1 : 0.55));
       const visible = s.exists && !hiddenVehicle && (s.alpha > 0 || !!vehicle);
       const p = visible ? world.project(s.x + s.frameW / 2, s.y + s.frameH / 2, head) : null;
       entry.exists = !!p;

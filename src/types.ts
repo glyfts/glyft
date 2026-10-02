@@ -372,15 +372,53 @@ export interface ParticleEmitterDef {
 /** Custom handler function */
 export type Handler = (a: Sprite, b: Sprite, game: Glyft) => void;
 
-/** Network configuration */
+/**
+ * Multiplayer: players in the same room see each other.
+ *
+ * Point it at a Wyrt server running the wyrt_sync module. Your player moves
+ * locally (no lag) and its position, facing, jumps, rides and attacks go to
+ * everyone else, who see you as an ordinary sprite with your name above it.
+ * In 3D, the vehicles in controller.board are shared: ride the horse away and
+ * it's gone from everyone's stable. Everything else (enemies, pickups) stays
+ * local to each player.
+ *
+ * @example
+ * network: { server: 'wss://glyft.dev/sync', room: 'island', name: 'Ada' }
+ */
 export interface NetworkConfig {
-  adapter: NetworkAdapter;
-  mode: 'local' | 'client' | 'server' | 'host';
-  authoritative?: ('position' | 'hp' | 'damage' | 'destroy')[];
-  local?: ('sounds' | 'flash' | 'particles')[];
-  prediction?: boolean;
-  predict?: ('position' | 'velocity')[];
-  wait?: ('damage' | 'destroy' | 'collect')[];
+  /** WebSocket URL of a Wyrt server with wyrt_sync */
+  server: string;
+  /** Players in the same room see each other. Default: the page path. */
+  room?: string;
+  /** Your name, shown to others. Default: the server picks 'Player N'. */
+  name?: string;
+  /** The sprite (name, id or type) that is you. Default: world.controller.sprite. */
+  player?: string;
+  /** State updates sent per second (default 15) */
+  rate?: number;
+}
+
+/** Another player in the room */
+export interface NetworkPlayer {
+  readonly id: number;
+  readonly name: string;
+  /** Area they're in (3D), or null until their first update */
+  readonly area: string | null;
+  /** Their sprite here, while they're somewhere you can see them */
+  readonly sprite: Sprite | null;
+}
+
+/** game.network: who's here, plus your own events */
+export interface Network {
+  readonly connected: boolean;
+  /** Your id on the server (null until connected) */
+  readonly id: number | null;
+  /** Everyone else in the room */
+  readonly players: readonly NetworkPlayer[];
+  /** Send an event to everyone else in the room (small JSON data) */
+  send(name: string, data?: unknown): void;
+  /** Hear events: your own names, plus 'join', 'leave', 'connect' and 'disconnect' */
+  on(name: string, callback: (player: NetworkPlayer | null, data: unknown) => void): void;
 }
 
 /**
@@ -1500,11 +1538,6 @@ export interface Glyft {
     emit(name: string, x: number, y: number): void;
   };
 
-  /** Network (if configured) */
-  readonly network?: {
-    readonly connected: boolean;
-    readonly playerId: string;
-    send(event: GameEvent): void;
-    on(type: string, callback: (event: GameEvent) => void): void;
-  };
+  /** Multiplayer (when config.network is set) */
+  readonly network: Network | null;
 }

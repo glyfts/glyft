@@ -54,32 +54,6 @@ export interface NetworkAdapter {
 }
 
 /**
- * Network configuration for GlyftConfig.
- */
-export interface NetworkConfig {
-  /** Your NetworkAdapter implementation */
-  adapter: NetworkAdapter;
-
-  /** Network mode */
-  mode: 'local' | 'client' | 'server' | 'host';
-
-  /** State that server controls (client won't modify locally) */
-  authoritative?: ('position' | 'hp' | 'damage' | 'destroy')[];
-
-  /** Effects handled locally regardless of mode */
-  local?: ('sounds' | 'flash' | 'particles')[];
-
-  /** Enable client-side prediction for smooth movement */
-  prediction?: boolean;
-
-  /** What to predict locally */
-  predict?: ('position' | 'velocity')[];
-
-  /** What to wait for server confirmation */
-  wait?: ('damage' | 'destroy' | 'collect')[];
-}
-
-/**
  * Built-in adapters (import separately)
  *
  * @example
