@@ -74,12 +74,12 @@ const config: GlyftConfig = {
     ],
 
     // Who appears where (in order, so later rules can be near earlier ones)
-    // The art has empty pixels under the feet (visualOffsetY) and a sword frame after the walk cycle
+    // Sheets: idle, 3 walk frames, then an attack frame (column 4); feet sit 1px above the bottom
     spawns: {
-      hero: { near: 'tower', radius: 140, with: { label: 'You', visualOffsetY: 9, walkFrames: 3 } },
+      hero: { near: 'tower', radius: 140, with: { label: 'You', visualOffsetY: 1, walkFrames: 3 } },
       cutter: { where: 'shore', near: 'hero', radius: 400, facing: 'out', with: { label: 'Boat' } },
       sloop: { where: 'sea' },
-      orc: { count: 6, where: 'hills', with: { visualOffsetY: 9, walkFrames: 3, hpBarVisible: true, data: { maxHp: 100 } } },
+      orc: { count: 6, where: 'hills', with: { visualOffsetY: 1, walkFrames: 3, hpBarVisible: true, data: { maxHp: 100 } } },
       coin: { count: 20, spacing: 64, with: { walkFrames: 0, bob: 4 } },
     },
   },
