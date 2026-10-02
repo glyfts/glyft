@@ -2787,9 +2787,8 @@ export class GlyftEngine {
       entry.labelRange = s.labelRange;
       entry.hpBarVisible = s.hpBarVisible;
     }
-    if (screen.size > this._sprites.size) {
-      for (const id of screen.keys()) if (!this._sprites.has(id)) screen.delete(id);
-    }
+    // Drop labels for sprites that left play (destroyed, or waiting in another area)
+    for (const id of screen.keys()) if (!this._sprites.has(id)) screen.delete(id);
     this._labelManager.updatePositions(screen, 0, 0, viewport[0], viewport[1], this._hoveredSprite?.id ?? null);
     this._labelManager.render(projection, 0, 0);
 
