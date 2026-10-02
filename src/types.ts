@@ -789,6 +789,13 @@ export interface BuildingDef {
   parts: BuildingPart[];
   /** Where the door is, relative to the building origin before rotation. Exits through this building start here. */
   door?: [number, number];
+  /**
+   * The ground under the building is levelled to its floor (a pad), with a skirt that blends back into the
+   * terrain, so it never floats on a slope or sinks into a hill. margin: extra level ground around the
+   * footprint; skirt: width of the blend (world units), widened on slopes to keep the banks gentle unless
+   * you set it. false leaves the terrain alone (a cave mouth set into a hillside, say). @default { margin: 1, skirt: 3 }
+   */
+  pad?: { margin?: number; skirt?: number } | false;
 }
 
 /** One area of the world: its own terrain, sky (or none), lighting, buildings, props and spawns. */

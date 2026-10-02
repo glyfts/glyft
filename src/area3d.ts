@@ -313,6 +313,7 @@ export function createArea(ctx: AreaContext, key: string, def: AreaDef): Area {
       }
       const r = p.building ? buildingRadius(p.building) : (ctx.modelTypes.get(name)!.footprint?.[0] ?? tileSize) / 2;
       const count = p.at ? 1 : p.count ?? 1;
+      const pads: { x: number; z: number; y: number; rotation: number; name: string }[] = [];
       for (let i = 0; i < count; i++) {
         const spot = p.at ?? area.findSpot(p, r, 'flat', !!p.building);
         if (!spot) {
@@ -322,10 +323,14 @@ export function createArea(ctx: AreaContext, key: string, def: AreaDef): Area {
         const wx = spot[0] / tileSize, wz = spot[1] / tileSize;
         const y = area.terrainHeight(wx, wz);
         const rotation = p.rotation ?? (p.at ? 0 : Math.floor(rand() * 4) * (Math.PI / 2));
-        if (p.building) placedBuildings.push({ defId: p.building, x: wx, y, z: wz, rotation });
+        if (p.building) {
+          placedBuildings.push({ defId: p.building, x: wx, y, z: wz, rotation });
+          pads.push({ x: wx, z: wz, y, rotation, name: p.building });
+        }
         else staticModels.push({ modelId: name, x: wx, y, z: wz, rotation, scale: ctx.modelTypes.get(name)!.scale ?? 1 });
         area.occupy(spot[0], spot[1], r, name);
       }
+      if (pads.length) stampPads(pads);
       area.meshes?.placeBuildings(placedBuildings);
     },
 
@@ -427,6 +432,81 @@ export function createArea(ctx: AreaContext, key: string, def: AreaDef): Area {
       if (Math.abs(area.terrainHeight(x / tileSize, y / tileSize) - h0) > 1.2) return false;
     }
     return true;
+  }
+
+  // ---- Pads: level ground under buildings (stamped into the heightmap, mesh rebuilt once per placement) ----
+
+  const padCell = terrainDef?.cellSize ?? 1;
+  const padMax = terrainDef?.maxHeight ?? 16;
+  // Cells already levelled for a building: later skirts leave them be, so pads can't undercut each other
+  const levelled = new Set<number>();
+
+  /** Terrain height (world units) straight from a heightmap grid, bilinear */
+  function sampleAt(hm: number[][], wx: number, wz: number): number {
+    const rows = hm.length, cols = hm[0].length;
+    const gx = wx / padCell, gz = wz / padCell;
+    const x0 = Math.max(0, Math.min(Math.floor(gx), cols - 2)), z0 = Math.max(0, Math.min(Math.floor(gz), rows - 2));
+    const fx = Math.min(1, Math.max(0, gx - x0)), fz = Math.min(1, Math.max(0, gz - z0));
+    const h0 = hm[z0][x0] + (hm[z0][x0 + 1] - hm[z0][x0]) * fx;
+    const h1 = hm[z0 + 1][x0] + (hm[z0 + 1][x0 + 1] - hm[z0 + 1][x0]) * fx;
+    return (h0 + (h1 - h0) * fz) * padMax;
+  }
+
+  function stampPads(list: { x: number; z: number; y: number; rotation: number; name: string }[]): void {
+    const terrain = area.terrain;
+    if (!terrain) return;
+    terrain.modifyHeightmap((hm) => {
+      const rows = hm.length, cols = hm[0].length;
+      for (const b of list) {
+        const def = ctx.buildings[b.name];
+        const padDef = Array.isArray(def) ? undefined : def.pad;
+        if (padDef === false) continue;
+        const margin = padDef?.margin ?? 1;
+        let skirt = Math.max(0.01, padDef?.skirt ?? 3);
+        // Footprint from the parts that stand on the ground (roofs overhang, they don't need ground)
+        const parts = buildingParts(def);
+        const base = parts.filter((q) => q.position[1] < 0.5);
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const q of base.length ? base : parts) {
+          x0 = Math.min(x0, q.position[0] - q.size[0] / 2); x1 = Math.max(x1, q.position[0] + q.size[0] / 2);
+          z0 = Math.min(z0, q.position[2] - q.size[2] / 2); z1 = Math.max(z1, q.position[2] + q.size[2] / 2);
+        }
+        const cxl = (x0 + x1) / 2, czl = (z0 + z1) / 2;
+        const hw = (x1 - x0) / 2 + margin, hd = (z1 - z0) / 2 + margin;
+        const c = Math.cos(b.rotation), s = Math.sin(b.rotation);
+        // On a slope the pad cuts in uphill and builds up downhill: widen the skirt with the height it has to
+        // make up, so the banks stay gentle slopes instead of cliffs (about 1 up for every 3 across)
+        let rise = 0;
+        for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [1, 0], [0, 1], [-1, 0]]) {
+          const lx = cxl + u * hw, lz = czl + v * hd;
+          rise = Math.max(rise, Math.abs(sampleAt(hm, b.x + lx * c - lz * s, b.z + lx * s + lz * c) - b.y));
+        }
+        if (padDef?.skirt === undefined) skirt = Math.max(skirt, rise * 3);
+        const reach = Math.hypot(hw, hd) + skirt + Math.hypot(cxl, czl);
+        const target = b.y / padMax;
+        const i0 = Math.max(0, Math.floor((b.x - reach) / padCell)), i1 = Math.min(cols - 1, Math.ceil((b.x + reach) / padCell));
+        const j0 = Math.max(0, Math.floor((b.z - reach) / padCell)), j1 = Math.min(rows - 1, Math.ceil((b.z + reach) / padCell));
+        for (let j = j0; j <= j1; j++) {
+          for (let i = i0; i <= i1; i++) {
+            // Into the building's own frame (the inverse of its rotation), then distance to the rectangle
+            const dx = i * padCell - b.x, dz = j * padCell - b.z;
+            const lx = dx * c + dz * s - cxl, lz = -dx * s + dz * c - czl;
+            const ox = Math.abs(lx) - hw, oz = Math.abs(lz) - hd;
+            const d = Math.hypot(Math.max(ox, 0), Math.max(oz, 0)) + Math.min(Math.max(ox, oz), 0);
+            if (d >= skirt) continue;
+            const k = j * cols + i;
+            if (d <= 0) {
+              hm[j][i] = target;
+              levelled.add(k);
+            } else if (!levelled.has(k)) {
+              const t = d / skirt;
+              const w = 1 - t * t * (3 - 2 * t);
+              hm[j][i] += (target - hm[j][i]) * w;
+            }
+          }
+        }
+      }
+    });
   }
 
   function buildingRadius(name: string): number {
