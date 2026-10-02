@@ -257,7 +257,10 @@ export function createArea(ctx: AreaContext, key: string, def: AreaDef): Area {
         }
         radius = rule.radius ?? 240;
       }
-      // Second pass drops the spacing so crowded rules still place something
+      // Hard constraint: stay clear of everything named awayFrom
+      const away = rule.awayFrom ? occupied.filter((o) => o.name === rule.awayFrom) : [];
+      const awayDist = rule.awayDistance ?? 320;
+      // Spacing relaxes on the second pass so crowded rules still place something; awayFrom never does
       for (let pass = 0; pass < 2; pass++) {
         const gap = pass === 0 ? spacing : 0;
         for (let i = 0; i < 800; i++) {
@@ -266,6 +269,7 @@ export function createArea(ctx: AreaContext, key: string, def: AreaDef): Area {
           else { const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * radius; x = cx + Math.cos(a) * d; y = cy + Math.sin(a) * d; }
           if (!area.inArea(x, y, kind)) continue;
           if (footprint && !footprintFits(x, y, selfR)) continue;
+          if (away.some((o) => Math.hypot(o.x - x, o.y - y) < awayDist)) continue;
           if (occupied.some((o) => Math.hypot(o.x - x, o.y - y) < o.r + selfR + gap)) continue;
           return [x, y];
         }

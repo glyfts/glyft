@@ -646,8 +646,12 @@ export interface PlacementRule {
   near?: string;
   /** Radius for `near` in pixels. @default 240 */
   radius?: number;
-  /** Minimum gap in pixels between this and anything else placed. @default 2 tiles */
+  /** Minimum gap in pixels between this and anything else placed. Relaxed if there's no room. @default 2 tiles */
   spacing?: number;
+  /** Keep at least `awayDistance` from everything with this name (a sprite type, building or exit). Never relaxed. */
+  awayFrom?: string;
+  /** Pixels for awayFrom. @default 320 */
+  awayDistance?: number;
 }
 
 /** Spawn rule: sprites of this type are created at game start. */

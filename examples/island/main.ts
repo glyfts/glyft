@@ -107,16 +107,16 @@ const config: GlyftConfig = {
           { building: 'caveMouth', where: 'flat', near: 'center', radius: 520, spacing: 200 },
         ],
         scatter: {
-          pine: { count: 70 }, oak: { count: 40 }, bush: { count: 60 }, grass: { count: 220 },
-          rock: [{ count: 35 }, { count: 6, near: 'caveMouth', radius: 90, spacing: 0 }],
-          boulder: [{ count: 10, where: 'hills' }, { count: 4, near: 'caveMouth', radius: 80, spacing: 0 }],
+          pine: { count: 40 }, oak: { count: 22 }, bush: { count: 35 }, grass: { count: 160 },
+          rock: [{ count: 18 }, { count: 4, near: 'caveMouth', radius: 90, spacing: 0 }],
+          boulder: [{ count: 6, where: 'hills' }, { count: 3, near: 'caveMouth', radius: 80, spacing: 0 }],
         },
         // Who appears where (in order, so later rules can be near earlier ones)
         spawns: {
           hero: { near: 'tower', radius: 140, with: { label: 'You', visualOffsetY: 1, walkFrames: 3 } },
           cutter: { where: 'shore', near: 'hero', radius: 700, facing: 'out', with: { label: 'Boat' } },
           sloop: { where: 'sea' },
-          orc: { count: 6, where: 'hills', with: { visualOffsetY: 1, walkFrames: 3, hpBarVisible: true, data: { maxHp: 100 } } },
+          orc: { count: 6, where: 'hills', awayFrom: 'hero', with: { visualOffsetY: 1, walkFrames: 3, hpBarVisible: true, data: { maxHp: 100 } } },
           coin: { count: 20, spacing: 64, with: { walkFrames: 0, bob: 4 } },
         },
       },
@@ -131,7 +131,7 @@ const config: GlyftConfig = {
           { building: 'stairs', where: 'flat', near: 'center', radius: 260, spacing: 160 },
         ],
         scatter: {
-          stalagmite: { count: 45 }, crystal: { count: 28, scale: [0.8, 1.6] }, mushroom: { count: 50 }, rock: { count: 30 },
+          stalagmite: { count: 26 }, crystal: { count: 20, scale: [0.8, 1.6] }, mushroom: { count: 35 }, rock: { count: 14 },
         },
         spawns: {
           slime: { count: 7, spacing: 48, with: { scale: 1.6, hpBarVisible: true, data: { maxHp: 100 } } },
