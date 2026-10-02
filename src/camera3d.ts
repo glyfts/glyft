@@ -16,6 +16,10 @@ export interface CameraRig {
   readonly mode: CameraDef['mode'];
   /** Advance one frame. `target` is the followed point in world units, or null. */
   update(dt: number, target: Vec3 | null, groundAt: (x: number, z: number) => number): void;
+  /** Jump straight to the target next update instead of easing (area changes) */
+  snap(): void;
+  /** Turn the camera (radians) */
+  setYaw(yaw: number): void;
   destroy(): void;
 }
 
@@ -142,6 +146,14 @@ export function createCameraRig(canvas: HTMLCanvasElement, def: CameraDef, tileS
 
       camera.target = [smoothTarget[0], smoothTarget[1], smoothTarget[2]];
       camera.position = [smoothTarget[0] + dirX * d, smoothTarget[1] + dirY * d, smoothTarget[2] + dirZ * d];
+    },
+
+    snap() {
+      first = true;
+    },
+
+    setYaw(v) {
+      yaw = v;
     },
 
     destroy() {

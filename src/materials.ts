@@ -12,7 +12,7 @@ import type { WorldTexture } from './types';
 export const MATERIAL_NAMES = [
   'sand', 'grass', 'rock', 'snow', 'dirt', 'mud',
   'stone', 'brick', 'plaster', 'wood', 'planks', 'thatch', 'slate',
-  'door', 'window', 'sail', 'rope', 'metal', 'hull', 'deck', 'lava',
+  'door', 'window', 'sail', 'rope', 'metal', 'hull', 'deck', 'lava', 'shadow',
 ] as const;
 
 export type MaterialName = typeof MATERIAL_NAMES[number];
@@ -42,6 +42,7 @@ const BASE: Record<MaterialName, [number, number, number, number]> = {
   hull: [92, 60, 36, 12],
   deck: [176, 136, 88, 10],
   lava: [230, 90, 20, 30],
+  shadow: [10, 9, 14, 4],
 };
 
 /** Small deterministic RNG so materials look the same every load. */

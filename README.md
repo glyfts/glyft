@@ -253,6 +253,8 @@ await game.start();
 
 - **Places, not coordinates:** `where` takes `'land'`, `'flat'`, `'hills'`, `'shore'`, `'sea'` or an exact `[x, y]`; `near` keeps things close to something placed earlier; `count` and `spacing` do the rest.
 - **Combat:** `controller.attack: { spawn: 'slash', frames: [4, 1] }` puts a short-lived hitbox in front of the player on click, and collision rules such as `'[enemy]:slash': { damage: 25 }` decide what a hit does.
+- **Areas and exits:** `world.areas` holds an island, a cavern, a keep interior, each with its own terrain, sky or underground light, buildings and spawns. `world.exits` joins them at building doors or rule-placed spots; walking in fades you through.
+- **Props:** `scatter: { pine: { count: 70 }, rock: { count: 30, where: 'hills' } }` places built-in trees, bushes, grass, rocks, boulders, stalagmites, crystals and mushrooms, one instanced draw call per kind.
 - **Vehicles and mounts built in:** `controller.board: { vehicles: ['boat', 'horse'] }`. Ships float and steer like boats; anything else is a mount the rider sits on.
 - **Rules for movement:** `world.blockedBy` stops every moving sprite at water, cliffs and buildings; ships are stopped by land. Addons take tag rules too (`ai({ auto })`, `death({ auto, playerRespawn })`).
 - **Types map to looks:** atlas sprites become billboards, `world.ships` types become procedural ships that float and turn to face their velocity, `world.models` types become glTF models.
@@ -278,7 +280,7 @@ cd glyft && npm install && npm run dev
 | RPG | Multi-room dungeon, NPCs, dialogue, combat, projectiles, particles, HP bars, labels |
 | Platformer | Gravity, jumping, platforms, stomping enemies, collectibles, coyote time |
 | Shmup | Bullet hell, radial/spiral/aimed patterns, bombs, graze scoring, boss fights |
-| Island | 3D: generated island, ocean waves, day/night sky, village, follow camera, boarding and sailing a boat |
+| Island | 3D: an island and the cavern under it joined by exits, trees and rocks, day/night, combat, sailing, minimap HUD |
 
 ## License
 

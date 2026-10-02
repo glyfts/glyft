@@ -65,6 +65,22 @@ export function generateHeightmap(def: HeightmapGenerator): number[][] {
     }
   }
 
+  // Cave layout: a central chamber, a few side pockets, some columns
+  const caveRooms: [number, number, number][] = [];
+  const cavePillars: [number, number][] = [];
+  if (def.generate === 'cave') {
+    caveRooms.push([0.5, 0.5, 0.26]);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + rand(i, 5) * 0.9;
+      const d = 0.2 + rand(i, 6) * 0.06;
+      caveRooms.push([0.5 + Math.cos(a) * d, 0.5 + Math.sin(a) * d, 0.12 + rand(i, 7) * 0.06]);
+    }
+    for (let i = 0; i < 5; i++) {
+      const a = rand(i, 8) * Math.PI * 2, d = 0.06 + rand(i, 9) * 0.14;
+      cavePillars.push([0.5 + Math.cos(a) * d, 0.5 + Math.sin(a) * d]);
+    }
+  }
+
   const grid: number[][] = [];
   for (let gy = 0; gy <= size; gy++) {
     const row: number[] = [];
@@ -77,6 +93,24 @@ export function generateHeightmap(def: HeightmapGenerator): number[][] {
         case 'flat':
           h = 0.25;
           break;
+        case 'cave': {
+          // A main chamber plus side pockets; the floor is low and lumpy, the walls climb steeply
+          let open = -1;
+          for (const [cx, cy, r] of caveRooms) {
+            const dx = u - cx, dy = v - cy;
+            open = Math.max(open, 1 - Math.sqrt(dx * dx + dy * dy) / (r * (0.85 + fbm(noise, u * 5 + cx * 7, v * 5, 3) * 0.35)));
+          }
+          if (open > 0) {
+            h = 0.04 + (n - 0.5) * 0.06 + Math.max(0, 0.12 - open) * 1.5;
+            for (const [px, py] of cavePillars) {
+              const d = Math.hypot(u - px, v - py);
+              if (d < 0.025) h = Math.max(h, 0.9 - d * 12);
+            }
+          } else {
+            h = Math.min(1, 0.22 - open * 2.4 + (n - 0.5) * 0.25);
+          }
+          break;
+        }
         case 'hills':
           h = 0.22 + n * 0.55;
           break;
@@ -100,7 +134,7 @@ export function generateHeightmap(def: HeightmapGenerator): number[][] {
         }
         default:
           throw new Error(
-            `Unknown heightmap generator '${(def as HeightmapGenerator).generate}'.\n\nFix: use 'island', 'archipelago', 'hills' or 'flat'.`
+            `Unknown heightmap generator '${(def as HeightmapGenerator).generate}'.\n\nFix: use 'island', 'archipelago', 'hills', 'cave' or 'flat'.`
           );
       }
       row.push(Math.max(0, Math.min(1, h)));

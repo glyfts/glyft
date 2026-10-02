@@ -98,8 +98,17 @@ export type {
   ModelDef,
   ShipDef,
   PlacementDef,
+  PlacementRule,
+  SpawnRule,
+  AttackDef,
+  AreaDef,
+  ExitDef,
+  ScatterRule,
+  PropKind,
+  BuildingDef,
 } from './types';
 export { MATERIAL_NAMES } from './materials';
+export { PROP_KINDS } from './props';
 export type { MaterialName } from './materials';
 
 // Re-export helpers for convenience (also available as 'glyft/helpers')

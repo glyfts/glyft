@@ -486,8 +486,8 @@ export type WorldTexture = string | number;
 
 /** Procedural heightmap generator. */
 export interface HeightmapGenerator {
-  /** 'island' (one island), 'archipelago' (several), 'hills' (rolling land), 'flat' */
-  generate: 'island' | 'archipelago' | 'hills' | 'flat';
+  /** 'island' (one island), 'archipelago' (several), 'hills' (rolling land), 'cave' (enclosed cavern), 'flat' */
+  generate: 'island' | 'archipelago' | 'hills' | 'cave' | 'flat';
   /** Grid size in cells (square). @default 128 */
   size?: number;
   /** Random seed. Same seed, same world. @default 1 */
@@ -729,13 +729,74 @@ export interface PlacementDef extends PlacementRule {
   rotation?: number;
 }
 
+/** Built-in 3D prop kinds for world.scatter. */
+export type PropKind = 'pine' | 'oak' | 'bush' | 'rock' | 'boulder' | 'stalagmite' | 'crystal' | 'mushroom' | 'grass';
+
+/** Scatter rule: how many of a prop and where. Trees, rocks, boulders, stalagmites and crystals block movement. */
+export interface ScatterRule extends PlacementRule {
+  /** Random size range. @default [0.8, 1.25] */
+  scale?: [number, number];
+}
+
+/** A building: its parts, plus an optional door (local [x, z] in world units) that exits can use. */
+export interface BuildingDef {
+  parts: BuildingPart[];
+  /** Where the door is, relative to the building origin before rotation. Exits through this building start here. */
+  door?: [number, number];
+}
+
+/** One area of the world: its own terrain, sky (or none), lighting, buildings, props and spawns. */
+export interface AreaDef {
+  /** Name shown when entering (world.areaLabel). @default the area key */
+  label?: string;
+  terrain?: TerrainDef;
+  /** Sky and day/night, or false for underground (fixed lighting from `light`). */
+  sky?: SkyDef | false;
+  /** Fixed lighting when there is no sky: hex colours. @default dim cave light */
+  light?: { ambient?: number; sun?: number; fog?: number };
+  place?: PlacementDef[];
+  /** Props by kind: one rule, or several (e.g. boulders on the hills and around a cave mouth) */
+  scatter?: Partial<Record<PropKind, ScatterRule | ScatterRule[]>>;
+  spawns?: Record<string, SpawnRule>;
+}
+
+/**
+ * A way from one area to another. It sits at a building's door, an exact spot, or a spot found by rule,
+ * and walking into it fades to the other area.
+ */
+export interface ExitDef extends PlacementRule {
+  from: string;
+  to: string;
+  /** Name other exits can arrive at. @default '<from>-<to>' */
+  name?: string;
+  /** Use the door of this building (placed in the `from` area). */
+  building?: string;
+  /** Exact ground position in pixels. */
+  at?: [number, number];
+  /** Exit in the `to` area to arrive at. @default the exit there that leads back to `from` */
+  arrive?: string;
+  /** Trigger radius in pixels. @default 14 */
+  trigger?: number;
+}
+
 /** The 3D world. */
 export interface WorldConfig {
+  /**
+   * Several areas joined by exits. Without this, the top-level terrain, sky, place, scatter and
+   * spawns form a single area.
+   */
+  areas?: Record<string, AreaDef>;
+  /** Area to start in. @default the first area */
+  start?: string;
+  exits?: ExitDef[];
+  /** Props for the single-area world (see areas for several). */
+  scatter?: Partial<Record<PropKind, ScatterRule | ScatterRule[]>>;
   terrain?: TerrainDef;
   sky?: SkyDef;
   camera?: CameraDef;
   controller?: ControllerDef;
-  buildings?: Record<string, BuildingPart[]>;
+  /** Buildings by name: a list of parts, or { parts, door } when exits use the door. */
+  buildings?: Record<string, BuildingPart[] | BuildingDef>;
   /** Custom building tile atlas (image URL) and its tile size in pixels. Defaults to the built-in material atlas. */
   buildingAtlas?: { src: string; tileSize: number };
   models?: Record<string, ModelDef>;
@@ -790,6 +851,16 @@ export interface World {
   readonly boardable: string | null;
   /** Find a ground spot matching a rule (null if none). Handy for respawns. */
   findSpot(rule: PlacementRule): [number, number] | null;
+  /** Exits out of the current area (ground pixels), e.g. for a minimap. */
+  readonly exits: { name: string; to: string; x: number; y: number }[];
+  /** Current area key. */
+  readonly area: string;
+  /** Current area's display name. */
+  readonly areaLabel: string;
+  /** Travel to an area now (the player and anything they ride come along). */
+  go(area: string, arrive?: string): void;
+  /** Called after each area change with the new area key. */
+  onAreaChange(callback: (area: string, label: string) => void): void;
 }
 
 // -----------------------------------------------------------------------------

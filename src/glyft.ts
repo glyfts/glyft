@@ -392,11 +392,31 @@ export class GlyftEngine {
           return sprite.id;
         },
         destroy: (id) => this.getById(id)?.destroy(),
+        // Sprites in other areas leave the live set (no physics, collisions, AI targets or drawing)
+        stash: (ids) => {
+          for (const id of ids) {
+            const sprite = this._sprites.get(id);
+            if (!sprite) continue;
+            this._sprites.delete(id);
+            this._stashed.set(id, sprite);
+          }
+        },
+        unstash: (ids) => {
+          for (const id of ids) {
+            const sprite = this._stashed.get(id);
+            if (!sprite) continue;
+            this._stashed.delete(id);
+            if (sprite.exists) this._sprites.set(id, sprite);
+          }
+        },
       });
       this._worldLoad = this._world.load();
       this._worldLoad.catch((err) => console.error('[Glyft] World failed to load:', err));
     }
   }
+
+  /** Sprites waiting in areas the player isn't in */
+  private _stashed = new Map<string, InternalSprite>();
 
   /** Backing pixels per viewport pixel (see settings.pixelRatio). */
   private _renderScale = 1;
@@ -1941,7 +1961,9 @@ export class GlyftEngine {
       sprite.y = plan.y - sprite.height / 2;
       sprite.rotation = plan.rotation;
       if (plan.with) this._applySpriteProps(sprite, plan.with);
+      this._world.adopt(sprite.id, plan.area);
     }
+    this._world.activate();
   }
 
   pause(): void {
@@ -2775,6 +2797,13 @@ export class GlyftEngine {
     this._arcManager.render(projection, this._time, 0, 0);
     this._ringManager.render(projection, this._time, 0, 0);
     this._floatTextManager.render(projection, this._time, 0, 0);
+
+    // Area transitions fade through black (over the HUD too)
+    if (world.fade > 0) {
+      const ctx = this.overlay;
+      ctx.fillStyle = `rgba(0, 0, 0, ${world.fade})`;
+      ctx.fillRect(0, 0, viewport[0], viewport[1]);
+    }
     this._renderOverlay();
   }
 

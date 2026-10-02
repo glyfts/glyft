@@ -1,19 +1,53 @@
 /**
  * Glyft Island Example
  *
- * A 3D game written the 2D way: rules, not code. The config declares the
- * island, the village, who spawns where, what blocks what, how enemies
- * behave, what a sword swing does, and how you board the boat. The only code
- * is loading three images and drawing the HUD.
+ * A 3D game written the 2D way: rules, not code. The config declares two
+ * areas (an island and the cavern beneath it) joined by exits, the village,
+ * trees and rocks, who spawns where, how enemies behave, what a sword swing
+ * does, and how you board the boat. The only code loads the images and the HUD.
  */
 
-import { Glyft, type GlyftConfig } from '../../src';
+import { Glyft, type GlyftConfig, type BuildingDef } from '../../src';
 import { ai, death } from '../../addons';
+import { createHud } from './hud';
+
+// ---- Buildings (parts in world units; door marks where exits start) ----
+
+const caveMouth: BuildingDef = {
+  parts: [
+    { type: 'box', position: [0, 0, -0.6], size: [5.2, 3.4, 2.6], faces: { all: 'rock' } },
+    { type: 'box', position: [-1.85, 0, 0.9], size: [1.5, 2.8, 1.6], faces: { all: 'rock' } },
+    { type: 'box', position: [1.85, 0, 0.9], size: [1.5, 2.8, 1.6], faces: { all: 'rock' } },
+    { type: 'box', position: [0, 2.2, 0.9], size: [5.2, 1.1, 1.6], faces: { all: 'rock' } },
+    { type: 'box', position: [0, 0, 0.6], size: [2.3, 2.25, 0.9], faces: { all: 'shadow' } },
+  ],
+  door: [0, 1.7],
+};
+
+const tower: BuildingDef = {
+  parts: [
+    { type: 'box', position: [0, 0, 0], size: [3, 7, 3], faces: { all: 'stone' } },
+    { type: 'box', position: [0, 0, 1.5], size: [1, 1.9, 0.1], faces: { all: 'door' } },
+    { type: 'box', position: [0, 7, 0], size: [3.5, 0.6, 3.5], faces: { all: 'brick' } },
+    { type: 'roof', position: [0, 7.6, 0], size: [3.5, 2.2, 3.5], faces: { all: 'slate', gable1: 'stone', gable2: 'stone' } },
+  ],
+  door: [0, 1.6],
+};
+
+// Stairs in the cavern that climb up into the tower
+const stairs: BuildingDef = {
+  parts: [
+    { type: 'box', position: [0, 0, -0.6], size: [3.4, 4, 2.4], faces: { all: 'stone' } },
+    { type: 'box', position: [0, 0, 0.62], size: [1.5, 2.3, 0.1], faces: { all: 'shadow' } },
+    { type: 'wedge', position: [0, 0, 1.3], size: [1.5, 0.5, 1.2], direction: 'south', faces: { all: 'stone' } },
+  ],
+  door: [0, 1.9],
+};
 
 const config: GlyftConfig = {
   settings: { tileSize: 16, viewport: [960, 540], mode: '3d', spriteMode: '4dir' },
 
-  autoTags: { hero: ['player'], orc: ['enemy'], coin: ['pickup'], sloop: ['ship'] },
+  autoTags: { hero: ['player'], orc: ['enemy'], slime: ['enemy'], coin: ['pickup'], sloop: ['ship'] },
   stats: { hp: { default: 100, max: 100 }, coins: { default: 0 } },
 
   sounds: {
@@ -34,13 +68,6 @@ const config: GlyftConfig = {
   },
 
   world: {
-    terrain: {
-      heightmap: { generate: 'island', size: 128, seed: 4 },
-      maxHeight: 16,
-      water: { height: 3.2, style: 'ocean' }, // generated land meets the sea at 0.2 x maxHeight
-      fog: { near: 70, far: 220 },
-    },
-    sky: { time: 0.32, dayLength: 240 },
     camera: { mode: 'follow', target: 'hero', distance: 11, pitch: 0.45, yaw: Math.PI, zoom: [5, 45] },
     controller: {
       sprite: 'hero', speed: 90, jump: 2,
@@ -55,33 +82,71 @@ const config: GlyftConfig = {
         { type: 'box', position: [-0.9, 1, 2], size: [0.8, 0.8, 0.08], faces: { all: 'window' } },
         { type: 'roof', position: [0, 2.6, 0], size: [4.6, 1.8, 4.6], faces: { all: 'thatch', gable1: 'plaster', gable2: 'plaster' } },
       ],
-      tower: [
-        { type: 'box', position: [0, 0, 0], size: [3, 7, 3], faces: { all: 'stone' } },
-        { type: 'box', position: [0, 0, 1.5], size: [1, 1.9, 0.1], faces: { all: 'door' } },
-        { type: 'box', position: [0, 7, 0], size: [3.5, 0.6, 3.5], faces: { all: 'brick' } },
-        { type: 'roof', position: [0, 7.6, 0], size: [3.5, 2.2, 3.5], faces: { all: 'slate', gable1: 'stone', gable2: 'stone' } },
-      ],
+      tower, caveMouth, stairs,
     },
     ships: {
       sloop: { preset: 'sloop' },
       cutter: { preset: 'cutter', turnRate: 1.2 },
     },
 
-    // A village: a tower on flat ground, huts around it
-    place: [
-      { building: 'tower', where: 'flat' },
-      { building: 'hut', count: 4, where: 'flat', near: 'tower', radius: 260, spacing: 48 },
-    ],
+    start: 'island',
+    areas: {
+      island: {
+        label: 'The Island',
+        terrain: {
+          heightmap: { generate: 'island', size: 128, seed: 4 },
+          maxHeight: 16,
+          water: { height: 3.2, style: 'ocean' }, // generated land meets the sea at 0.2 x maxHeight
+          fog: { near: 70, far: 220 },
+        },
+        sky: { time: 0.32, dayLength: 240 },
+        // A village around a tower, and a cave in the hills away from it
+        place: [
+          { building: 'tower', where: 'flat' },
+          { building: 'hut', count: 4, where: 'flat', near: 'tower', radius: 260, spacing: 48 },
+          { building: 'caveMouth', where: 'flat', near: 'center', radius: 520, spacing: 200 },
+        ],
+        scatter: {
+          pine: { count: 70 }, oak: { count: 40 }, bush: { count: 60 }, grass: { count: 220 },
+          rock: [{ count: 35 }, { count: 6, near: 'caveMouth', radius: 90, spacing: 0 }],
+          boulder: [{ count: 10, where: 'hills' }, { count: 4, near: 'caveMouth', radius: 80, spacing: 0 }],
+        },
+        // Who appears where (in order, so later rules can be near earlier ones)
+        spawns: {
+          hero: { near: 'tower', radius: 140, with: { label: 'You', visualOffsetY: 1, walkFrames: 3 } },
+          cutter: { where: 'shore', near: 'hero', radius: 700, facing: 'out', with: { label: 'Boat' } },
+          sloop: { where: 'sea' },
+          orc: { count: 6, where: 'hills', with: { visualOffsetY: 1, walkFrames: 3, hpBarVisible: true, data: { maxHp: 100 } } },
+          coin: { count: 20, spacing: 64, with: { walkFrames: 0, bob: 4 } },
+        },
+      },
 
-    // Who appears where (in order, so later rules can be near earlier ones)
-    // Sheets: idle, 3 walk frames, then an attack frame (column 4); feet sit 1px above the bottom
-    spawns: {
-      hero: { near: 'tower', radius: 140, with: { label: 'You', visualOffsetY: 1, walkFrames: 3 } },
-      cutter: { where: 'shore', near: 'hero', radius: 400, facing: 'out', with: { label: 'Boat' } },
-      sloop: { where: 'sea' },
-      orc: { count: 6, where: 'hills', with: { visualOffsetY: 1, walkFrames: 3, hpBarVisible: true, data: { maxHp: 100 } } },
-      coin: { count: 20, spacing: 64, with: { walkFrames: 0, bob: 4 } },
+      cavern: {
+        label: 'Glimmer Cavern',
+        terrain: { heightmap: { generate: 'cave', size: 72, seed: 9 }, maxHeight: 9, fog: { near: 14, far: 52 } },
+        sky: false,
+        light: { ambient: 0x3d3852, sun: 0x9a7c60, fog: 0x0a0910 },
+        place: [
+          { building: 'caveMouth', where: 'flat', near: 'center', radius: 260 },
+          { building: 'stairs', where: 'flat', near: 'center', radius: 260, spacing: 160 },
+        ],
+        scatter: {
+          stalagmite: { count: 45 }, crystal: { count: 28, scale: [0.8, 1.6] }, mushroom: { count: 50 }, rock: { count: 30 },
+        },
+        spawns: {
+          slime: { count: 7, spacing: 48, with: { scale: 1.6, hpBarVisible: true, data: { maxHp: 100 } } },
+          coin: { count: 12, spacing: 48, with: { walkFrames: 0, bob: 4 } },
+        },
+      },
     },
+
+    // Walk into a doorway to go through. Each pair names where you come out.
+    exits: [
+      { from: 'island', to: 'cavern', building: 'caveMouth', name: 'cave-mouth', arrive: 'cavern-tunnel' },
+      { from: 'cavern', to: 'island', building: 'caveMouth', name: 'cavern-tunnel', arrive: 'cave-mouth' },
+      { from: 'cavern', to: 'island', building: 'stairs', name: 'cavern-stairs', arrive: 'tower-door' },
+      { from: 'island', to: 'cavern', building: 'tower', name: 'tower-door', arrive: 'cavern-stairs' },
+    ],
   },
 };
 
@@ -97,9 +162,13 @@ game.use(ai({
   auto: { enemy: 'hunter', ship: 'cruise' },
 }));
 game.use(death({
-  rules: { orc: { particles: 'poof', floatText: 'Defeated' } },
-  auto: { enemy: 'orc' },
-  playerRespawn: { hp: 100, floatText: 'Ouch', returnToStart: true },
+  rules: { foe: { particles: 'poof', floatText: 'Defeated' } },
+  auto: { enemy: 'foe' },
+  // Knocked out: wake at the start; from the cavern, that means back up the tower stairs first
+  playerRespawn: {
+    hp: 100, floatText: 'Ouch', returnToStart: true,
+    onDeath: () => { if (game.world!.area !== 'island') game.world!.go('island', 'tower-door'); },
+  },
 }));
 
 await Promise.all([
@@ -107,30 +176,10 @@ await Promise.all([
   game.loadTexture('orc', './orc.png', { frameWidth: 32, frameHeight: 32 }),
   game.loadTexture('coin', './coin.png', { frameWidth: 16, frameHeight: 16 }),
 ]);
+game.createTestAtlas('starter', 16, 16); // built-in art: the cave slimes
 
 await game.start();
-
-// ---- HUD ----
-
-const hero = game.getTagged('player')[0];
-const world = game.world!;
-
-game.onUpdate(() => {
-  const ctx = game.overlay;
-  const hour = Math.floor(world.time * 24);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-  ctx.fillRect(8, 8, 230, 64);
-  ctx.fillStyle = '#fff';
-  ctx.font = '14px system-ui, sans-serif';
-  ctx.fillText(`HP ${hero.hp ?? 100}   Coins ${game.stats.coins}/20`, 18, 30);
-  ctx.fillText(`${String(hour).padStart(2, '0')}:00  ${world.riding ? 'Sailing (F near land to step off)' : 'On foot'}`, 18, 52);
-  if (world.boardable) {
-    ctx.font = 'bold 18px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Press F to board', 480, 470);
-    ctx.textAlign = 'left';
-  }
-});
+createHud(game, { coinsTotal: 32 });
 
 // Handy for poking at the world from the browser console
 (window as unknown as { game: Glyft }).game = game;
