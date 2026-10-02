@@ -2,7 +2,7 @@
  * Heightmap terrain subsystem for Glyft.
  *
  * Renders a 3D terrain mesh from height data with perspective projection.
- * Designed to coexist with Glyft's 2D rendering — sprites and effects
+ * Designed to coexist with Glyft's 2D rendering: sprites and effects
  * project into 3D space via world-to-screen mapping.
  */
 
@@ -18,7 +18,7 @@ import {
   type Mat4,
 } from './math3d';
 import { terrainVertexShader, terrainFragmentShader } from './shaders/terrain';
-import { waterVertexShader, waterFragmentShader } from './shaders/water';
+import { generateWaterVertexShader, waterFragmentShader } from './shaders/water';
 
 // ---- Types ----
 
@@ -33,7 +33,7 @@ export interface TerrainConfig {
   texture: WebGLTexture;
   /** Texture dimensions for UV calculation */
   textureRepeat?: number;
-  /** Splatmap textures — blended by height and slope when provided */
+  /** Splatmap textures: blended by height and slope when provided */
   splatTextures?: {
     /** Flat lowlands (default: sand) */
     low: WebGLTexture;
@@ -44,9 +44,9 @@ export interface TerrainConfig {
     /** High elevations (default: snow) */
     high: WebGLTexture;
   };
-  /** Biome texture arrays — one TEXTURE_2D_ARRAY per splatmap role, layers = biomes */
+  /** Biome texture arrays: one TEXTURE_2D_ARRAY per splatmap role, layers = biomes */
   biomeArrays?: { low: WebGLTexture; mid: WebGLTexture; steep: WebGLTexture; high: WebGLTexture };
-  /** Biome index map — R channel = biome index (0-1 mapped to 0..biomeCount-1) */
+  /** Biome index map: R channel = biome index (0-1 mapped to 0..biomeCount-1) */
   biomeIndex?: WebGLTexture;
   /** Number of biome layers in the arrays */
   biomeCount?: number;
@@ -74,6 +74,10 @@ export interface TerrainConfig {
     speed?: number;
     emissive?: number; // 0 = water, 1 = full lava glow
   };
+  /** Foam texture for wave crest highlights */
+  foamTexture?: WebGLTexture;
+  /** Base ocean surface texture (tiled, tinted by deep/shallow colours) */
+  seaTexture?: WebGLTexture;
 }
 
 export interface Camera3D {
@@ -122,6 +126,10 @@ export interface TerrainSystem {
   modifyHeightmap(fn: (heightmap: number[][]) => void): void;
   /** Get the raw heightmap data (for export) */
   getHeightmap(): number[][];
+  /** Set wave amplitude scale (1.0 = normal, 3.0 = storm) */
+  setWaveScale(scale: number): void;
+  /** Set wave speed multiplier (1.0 = normal) */
+  setWaveSpeedMul(speed: number): void;
   /** Destroy GPU resources */
   destroy(): void;
 }
@@ -225,7 +233,7 @@ function generateSteppedVertices(
       // Top face (flat quad at cell height)
       pushQuad(wx, h, wz1, wx1, h, wz1, wx1, h, wz, wx, h, wz, 0, 1, 0, u0, v0, u1, v1);
 
-      // Side walls — UVs: 1 tile per cell width, scale height to match
+      // Side walls: UVs: 1 tile per cell width, scale height to match
       const wallTile = 0.15; // ~1/7 texture repeat per cell = large visible bricks
       // East neighbor
       if (x + 1 < cols) {
@@ -345,7 +353,7 @@ function sampleHeight(heightmap: number[][], cellSize: number, maxHeight: number
   const z0 = Math.max(0, Math.min(Math.floor(gz), rows - 2));
 
   if (stepped) {
-    // Snap to cell height — no interpolation
+    // Snap to cell height: no interpolation
     return heightmap[z0][x0] * maxHeight;
   }
 
@@ -400,6 +408,9 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
   let waterShader: ReturnType<typeof compileShader> | null = null;
   let waterVAO: WebGLVertexArrayObject | null = null;
   let waterVBO: WebGLBuffer | null = null;
+  let waterVertCount = 6;
+  let waveScale = 1.0;
+  let waveSpeedMul = 1.0;
 
   // Sand floor plane (rendered below water, extends to horizon)
   const floorVS = /*glsl*/`#version 300 es
@@ -462,16 +473,27 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
   }
 
   if (waterHeight != null) {
-    waterShader = compileShader(gl, waterVertexShader, waterFragmentShader,
-      ['u_mvp', 'u_worldSize', 'u_waterHeight', 'u_time', 'u_cameraPos', 'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_deepColor', 'u_shallowColor', 'u_alpha', 'u_speed', 'u_emissive'],
+    waterShader = compileShader(gl, generateWaterVertexShader(), waterFragmentShader,
+      ['u_mvp', 'u_worldSize', 'u_waterHeight', 'u_time', 'u_cameraPos', 'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_deepColor', 'u_shallowColor', 'u_alpha', 'u_speed', 'u_emissive', 'u_waveScale', 'u_waveSpeedMul', 'u_foamTex', 'u_hasFoam', 'u_seaTex', 'u_hasSea'],
       ['a_position'],
     );
-    const quadVerts = new Float32Array([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1]);
+    // Subdivided grid for wave vertex displacement
+    const WATER_GRID = 120;
+    const gridVerts: number[] = [];
+    for (let gy = 0; gy < WATER_GRID; gy++) {
+      for (let gx = 0; gx < WATER_GRID; gx++) {
+        const u0 = gx / WATER_GRID, u1 = (gx + 1) / WATER_GRID;
+        const v0 = gy / WATER_GRID, v1 = (gy + 1) / WATER_GRID;
+        gridVerts.push(u0, v0, u1, v0, u0, v1);
+        gridVerts.push(u1, v0, u1, v1, u0, v1);
+      }
+    }
+    waterVertCount = gridVerts.length / 2;
     waterVAO = gl.createVertexArray()!;
     gl.bindVertexArray(waterVAO);
     waterVBO = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, waterVBO);
-    gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(gridVerts), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
@@ -667,9 +689,31 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
         gl.uniform1f(waterShader.uniforms.u_alpha, ws?.alpha ?? 0.7);
         gl.uniform1f(waterShader.uniforms.u_speed, ws?.speed ?? 1.0);
         gl.uniform1f(waterShader.uniforms.u_emissive, ws?.emissive ?? 0.0);
+        gl.uniform1f(waterShader.uniforms.u_waveScale, waveScale);
+        gl.uniform1f(waterShader.uniforms.u_waveSpeedMul, waveSpeedMul);
+
+        // Foam texture
+        if (config.foamTexture) {
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, config.foamTexture);
+          gl.uniform1i(waterShader.uniforms.u_foamTex, 1);
+          gl.uniform1f(waterShader.uniforms.u_hasFoam, 1.0);
+        } else {
+          gl.uniform1f(waterShader.uniforms.u_hasFoam, 0.0);
+        }
+
+        // Sea surface texture
+        if (config.seaTexture) {
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, config.seaTexture);
+          gl.uniform1i(waterShader.uniforms.u_seaTex, 2);
+          gl.uniform1f(waterShader.uniforms.u_hasSea, 1.0);
+        } else {
+          gl.uniform1f(waterShader.uniforms.u_hasSea, 0.0);
+        }
 
         gl.bindVertexArray(waterVAO);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.drawArrays(gl.TRIANGLES, 0, waterVertCount);
         gl.bindVertexArray(null);
       }
     },
@@ -759,6 +803,14 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
     getWorldSize(): [number, number] {
       return [worldWidth, worldDepth];
+    },
+
+    setWaveScale(scale: number) {
+      waveScale = scale;
+    },
+
+    setWaveSpeedMul(speed: number) {
+      waveSpeedMul = speed;
     },
 
     destroy() {
