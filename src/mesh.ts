@@ -249,9 +249,12 @@ export function createMeshSystem(
       const verts: number[] = [];
       let maxHW = 0, maxHD = 0, topH = 0;
 
-      for (const part of parts) {
+      parts.forEach((part, i) => {
         const [px, py, pz] = part.position;
-        const [w, h, d] = part.size;
+        // Parts often share faces (a lintel flush with its pillars). Grow each later part by a few
+        // millimetres so shared faces always resolve to the later part instead of flickering.
+        const grow = i * 0.006;
+        const w = part.size[0] + grow * 2, h = part.size[1] + grow, d = part.size[2] + grow * 2;
         if (part.type === 'box') {
           generateBox(verts, px, py, pz, w, h, d, part.faces, tilesPerRow, tileSize, atlas.width);
         } else if (part.type === 'roof') {
@@ -259,10 +262,10 @@ export function createMeshSystem(
         } else if (part.type === 'wedge') {
           generateWedge(verts, px, py, pz, w, h, d, part.faces, part.direction || 'south', tilesPerRow, tileSize, atlas.width);
         }
-        maxHW = Math.max(maxHW, Math.abs(px) + w / 2);
-        topH = Math.max(topH, py + h);
-        maxHD = Math.max(maxHD, Math.abs(pz) + d / 2);
-      }
+        maxHW = Math.max(maxHW, Math.abs(px) + part.size[0] / 2);
+        topH = Math.max(topH, py + part.size[1]);
+        maxHD = Math.max(maxHD, Math.abs(pz) + part.size[2] / 2);
+      });
 
       const data = new Float32Array(verts);
       const vao = gl.createVertexArray()!;
