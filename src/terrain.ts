@@ -54,6 +54,8 @@ export interface TerrainConfig {
   ambientColor?: [number, number, number];
   /** Directional light color [r,g,b] 0-1 */
   lightColor?: [number, number, number];
+  /** Direction toward the light (normalized). Default: sun above-right. */
+  lightDir?: Vec3;
   /** Fog color [r,g,b] 0-1. Updated at runtime for zone transitions. */
   fogColor?: [number, number, number];
   /** Fog near distance in world units */
@@ -93,6 +95,17 @@ export interface Camera3D {
   far: number;
 }
 
+/** Shared scene lighting and fog, driven by the sky when one is declared. */
+export interface Lighting {
+  /** Direction toward the sun (normalized) */
+  lightDir: Vec3;
+  ambient: Vec3;
+  light: Vec3;
+  fogColor: Vec3;
+  fogNear: number;
+  fogFar: number;
+}
+
 export interface TerrainSystem {
   /** Render the terrain */
   render(camera: Camera3D, viewportW: number, viewportH: number): void;
@@ -115,7 +128,9 @@ export interface TerrainSystem {
   /** Toggle hard texture blending (sharp cutoffs for dungeons) */
   setHardBlend(enabled: boolean): void;
   /** Set lighting at runtime (day/night cycle) */
-  setLighting(ambient: [number, number, number], light: [number, number, number]): void;
+  setLighting(ambient: [number, number, number], light: [number, number, number], lightDir?: Vec3): void;
+  /** Seconds on the water animation clock (sample waves with this so objects ride the drawn surface) */
+  getWaterTime(): number;
   /** Set fog parameters at runtime */
   setFog(color: [number, number, number], near?: number, far?: number): void;
   /** Toggle stepped terrain (flat cells with vertical walls, no slopes) */
@@ -500,6 +515,11 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
   }
 
   let startTime = 0;
+  const waterTime = () => {
+    if (startTime === 0) startTime = performance.now() / 1000;
+    return performance.now() / 1000 - startTime;
+  };
+  const defaultLightDir = vec3Normalize(vec3(0.3, 1.0, 0.5));
 
   // Cached matrices
   let cachedMVP: Mat4 = new Float32Array(16);
@@ -622,8 +642,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       }
 
       // Directional light (sun from above-right)
-      const lightDir = vec3Normalize(vec3(0.3, 1.0, 0.5));
-      gl.uniform3fv(shader.uniforms.u_lightDir, lightDir);
+      gl.uniform3fv(shader.uniforms.u_lightDir, config.lightDir ?? defaultLightDir);
       const ac = config.ambientColor || [0.3, 0.3, 0.35];
       const lc = config.lightColor || [1.0, 0.95, 0.85];
       gl.uniform3f(shader.uniforms.u_ambientColor, ac[0], ac[1], ac[2]);
@@ -666,8 +685,7 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
 
       // Draw water plane
       if (waterShader && waterVAO && waterHeight != null) {
-        if (startTime === 0) startTime = performance.now() / 1000;
-        const time = performance.now() / 1000 - startTime;
+        const time = waterTime();
 
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -679,8 +697,8 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
         gl.uniform1f(waterShader.uniforms.u_time, time);
         gl.uniform3fv(waterShader.uniforms.u_cameraPos, camera.position);
         gl.uniform3f(waterShader.uniforms.u_fogColor, fc[0], fc[1], fc[2]);
-        gl.uniform1f(waterShader.uniforms.u_fogNear, camera.far * 0.5);
-        gl.uniform1f(waterShader.uniforms.u_fogFar, camera.far);
+        gl.uniform1f(waterShader.uniforms.u_fogNear, config.fogNear ?? camera.far * 0.5);
+        gl.uniform1f(waterShader.uniforms.u_fogFar, config.fogFar ?? camera.far);
 
         // Water style (defaults to blue water)
         const ws = config.waterStyle;
@@ -762,9 +780,14 @@ export function createTerrainSystem(gl: WebGL2RenderingContext, config: TerrainC
       config.splatTextures = textures;
     },
 
-    setLighting(ambient: [number, number, number], light: [number, number, number]) {
+    setLighting(ambient: [number, number, number], light: [number, number, number], lightDir?: Vec3) {
       config.ambientColor = ambient;
       config.lightColor = light;
+      if (lightDir) config.lightDir = lightDir;
+    },
+
+    getWaterTime() {
+      return waterTime();
     },
 
     setFog(color: [number, number, number], near?: number, far?: number) {

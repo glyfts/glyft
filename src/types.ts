@@ -126,6 +126,14 @@ export interface GlyftSettings {
    * @default false
    */
   alpha?: boolean;
+
+  /**
+   * Rendering mode. In '3d', sprites keep their 2D logic (x/y in pixels on the
+   * ground plane) and Glyft lifts them onto the terrain declared in `world`.
+   * One tile (tileSize px) is one world unit. Implies `depth: true`.
+   * @default '2d'
+   */
+  mode?: '2d' | '3d';
 }
 
 /** Stat definition */
@@ -139,7 +147,7 @@ export interface StatDef {
  * Declarative sound effect definition.
  *
  * Each SfxDef describes a procedurally-generated sound using Web Audio oscillators.
- * All fields are serializable JSON — no callbacks, no audio files needed.
+ * All fields are serializable JSON: no callbacks, no audio files needed.
  *
  * @example
  * ```typescript
@@ -165,11 +173,11 @@ export interface SfxDef {
   sweepTime?: number;
   /** Gain envelope decay curve: 'exp' for exponential, 'linear' for linear (default: 'exp') */
   decay?: 'exp' | 'linear';
-  /** Attack time in seconds — fade in from silence (default: 0) */
+  /** Attack time in seconds: fade in from silence (default: 0) */
   attack?: number;
-  /** Detune in cents — shifts pitch (default: 0) */
+  /** Detune in cents: shifts pitch (default: 0) */
   detune?: number;
-  /** Noise mix 0-1 — blends white noise with the oscillator (default: 0) */
+  /** Noise mix 0-1: blends white noise with the oscillator (default: 0) */
   noise?: number;
   /** Biquad filter type (default: none) */
   filter?: 'lowpass' | 'highpass' | 'bandpass';
@@ -251,11 +259,11 @@ export interface MusicTrack {
   fadeIn?: number;
   /** Master volume for this track (default: 1.0) */
   volume?: number;
-  /** Tempo in BPM — enables declarative melody mode (default: 120) */
+  /** Tempo in BPM: enables declarative melody mode (default: 120) */
   bpm?: number;
   /** Oscillator waveform for melody notes (default: 'sine') */
   wave?: 'sine' | 'square' | 'sawtooth' | 'triangle';
-  /** Note sequence — note names ('C4', 'D#4'), Hz frequencies, or [note, duration] tuples.
+  /** Note sequence: note names ('C4', 'D#4'), Hz frequencies, or [note, duration] tuples.
    *  When a note is a tuple, the second element is its duration in beats (default: 1).
    *  Simple notes use the global noteLength. Example:
    *  `['C4', 'E4', ['G4', 0.5], 'C5']` */
@@ -417,7 +425,7 @@ export interface GlyftConfig {
   stats?: Record<string, StatDef>;
 
   /**
-   * Named sound effect definitions — procedurally generated, no audio files needed.
+   * Named sound effect definitions: procedurally generated, no audio files needed.
    * Referenced by name in sound rules and addon configs.
    * @example { laser: { wave: 'sine', freq: 880, duration: 0.15, sweep: 440 } }
    */
@@ -452,6 +460,230 @@ export interface GlyftConfig {
 
   /** Network configuration for multiplayer */
   network?: NetworkConfig;
+
+  /** 3D world: terrain, sky, camera, controller, buildings, models, ships. Requires settings.mode '3d'. */
+  world?: WorldConfig;
+}
+
+// -----------------------------------------------------------------------------
+// 3D World Config
+// -----------------------------------------------------------------------------
+
+/**
+ * Texture source for terrain and ship surfaces: a built-in material name
+ * ('sand', 'grass', 'rock', 'snow', 'dirt', 'mud', 'stone', 'wood'...), a hex colour,
+ * or an image URL.
+ */
+export type WorldTexture = string | number;
+
+/** Procedural heightmap generator. */
+export interface HeightmapGenerator {
+  /** 'island' (one island), 'archipelago' (several), 'hills' (rolling land), 'flat' */
+  generate: 'island' | 'archipelago' | 'hills' | 'flat';
+  /** Grid size in cells (square). @default 128 */
+  size?: number;
+  /** Random seed. Same seed, same world. @default 1 */
+  seed?: number;
+}
+
+/** Terrain declaration. */
+export interface TerrainDef {
+  /** Heightmap: image URL (red channel = height), 2D array of 0..1 heights, or a generator. */
+  heightmap: string | number[][] | HeightmapGenerator;
+  /** World units per heightmap cell. @default 1 */
+  cellSize?: number;
+  /** Height of a 1.0 heightmap value, in world units. @default 16 */
+  maxHeight?: number;
+  /** Surface textures blended by height and slope. */
+  textures?: { low?: WorldTexture; mid?: WorldTexture; steep?: WorldTexture; high?: WorldTexture };
+  /** Water (or lava) plane. Omit for no water. */
+  water?: {
+    /** Surface height in world units */
+    height: number;
+    /** @default 'ocean' */
+    style?: 'ocean' | 'lake' | 'lava';
+    /** Wave strength: 0 = flat, 1 = normal, 3 = storm. @default 1 */
+    waves?: number;
+  };
+  /** Distance fog in world units. Colour follows the sky when one is declared. */
+  fog?: { near?: number; far?: number; color?: number };
+  /** Flat cells with vertical walls (dungeon look). @default false */
+  stepped?: boolean;
+}
+
+/** Sky and day/night cycle. Drives fog colour and lighting for the whole world. */
+export interface SkyDef {
+  /** Time of day 0..1 (0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset). @default 0.4 */
+  time?: number;
+  /** Real seconds per in-game day. 0 freezes time. @default 0 */
+  dayLength?: number;
+  /** @default true */
+  stars?: boolean;
+  /** @default true */
+  clouds?: boolean;
+}
+
+/** Camera declaration. */
+export interface CameraDef {
+  /**
+   * 'follow': chase a sprite, drag to rotate, wheel to zoom.
+   * 'orbit': circle a fixed point (or a sprite), drag to rotate, wheel to zoom.
+   * 'fps': first person from the target sprite's eyes, mouse look with pointer lock.
+   * 'fixed': stays at `position`, looking at `lookAt`.
+   */
+  mode: 'follow' | 'orbit' | 'fps' | 'fixed';
+  /** Sprite id or type to follow (follow, orbit, fps). */
+  target?: string;
+  /** Distance from target in world units. @default 14 */
+  distance?: number;
+  /** Zoom range for the mouse wheel. @default [4, 60] */
+  zoom?: [number, number];
+  /** Starting pitch in radians (0 level, PI/2 straight down). @default 0.5 */
+  pitch?: number;
+  /** Starting yaw in radians. @default 0 */
+  yaw?: number;
+  /** Field of view in radians. @default PI/4 (PI/3 for fps) */
+  fov?: number;
+  /** Far clip in world units. @default 400 */
+  far?: number;
+  /** Pull in when terrain is between camera and target (follow). @default true */
+  collide?: boolean;
+  /** Eye height above the sprite's feet (fps). @default 1.6 */
+  eyeHeight?: number;
+  /** Fixed/orbit position: [x, y] in ground pixels plus height in world units. */
+  position?: [number, number, number];
+  /** Point to look at: [x, y] in ground pixels plus height in world units. */
+  lookAt?: [number, number, number];
+}
+
+/** Keyboard movement for one sprite, relative to the camera. */
+export interface ControllerDef {
+  /** Sprite id or type to drive */
+  sprite: string;
+  /** Speed in pixels per second (same units as vx/vy). @default 96 */
+  speed?: number;
+  /** Sprint multiplier while Shift is held. @default 1.6 */
+  sprint?: number;
+  /** Jump height in world units (Space). 0 disables. @default 0 */
+  jump?: number;
+  /** What stops movement. 'land' is for boats. @default ['water', 'steep', 'buildings'] */
+  blockedBy?: ('water' | 'steep' | 'buildings' | 'land')[];
+  /** Steepest walkable slope as the minimum surface normal Y (1 flat, 0 wall). @default 0.65 */
+  maxSlope?: number;
+}
+
+/** A building part. Faces take material names from the built-in atlas or tile indices of `world.buildingAtlas`. */
+export interface BuildingPart {
+  type: 'box' | 'roof' | 'wedge';
+  /** Offset from the building origin in world units [x, y, z]: the part's centre on x/z, its base on y */
+  position: [number, number, number];
+  /** Size in world units [width, height, depth] */
+  size: [number, number, number];
+  /**
+   * Material per face. Box: north/south/east/west/top/bottom. Roof: slope1/slope2/gable1/gable2.
+   * Wedge: slope/back/side1/side2/bottom. 'all' sets the default.
+   */
+  faces: Record<string, string | number>;
+  /** Wedge only: the direction the ramp descends toward */
+  direction?: 'north' | 'south' | 'east' | 'west';
+}
+
+/** glTF model declaration. Sprites of this type render as the model. */
+export interface ModelDef {
+  /** .glb or .gltf URL */
+  src: string;
+  /** @default 1 */
+  scale?: number;
+  /** Ground footprint in pixels for collisions [w, h]. @default one tile */
+  footprint?: [number, number];
+  /** Ride the waves when over water. @default false */
+  floats?: boolean;
+}
+
+/**
+ * Procedural ship. Sprites of this type render as the ship, float, and turn to face their velocity.
+ * `sprite.rotation` is the heading in radians (0 faces +y on the ground, PI/2 faces +x).
+ */
+export interface ShipDef {
+  /** Base hull: 'cutter', 'sloop', 'brig', 'frigate', 'galleon'. @default 'sloop' */
+  preset?: 'cutter' | 'sloop' | 'brig' | 'frigate' | 'galleon';
+  /** Overrides on the preset. */
+  hullLength?: number;
+  hullBeam?: number;
+  hullDraft?: number;
+  hullFreeboard?: number;
+  bowSharpness?: number;
+  sternWidth?: number;
+  sternCastle?: number;
+  foreCastle?: number;
+  mastCount?: number;
+  mastHeight?: number;
+  sailsPerMast?: number[];
+  cannonsPerSide?: number;
+  bowsprit?: boolean;
+  /** Surface colours or textures */
+  colors?: { hull?: WorldTexture; deck?: WorldTexture; sail?: WorldTexture; trim?: WorldTexture };
+  /** Turn rate in radians per second when changing heading. @default 1.5 */
+  turnRate?: number;
+}
+
+/** A static placement in the world. Exactly one of building/model. */
+export interface PlacementDef {
+  building?: string;
+  model?: string;
+  /** Ground position in pixels [x, y] */
+  at: [number, number];
+  /** Rotation in radians. @default 0 */
+  rotation?: number;
+}
+
+/** The 3D world. */
+export interface WorldConfig {
+  terrain?: TerrainDef;
+  sky?: SkyDef;
+  camera?: CameraDef;
+  controller?: ControllerDef;
+  buildings?: Record<string, BuildingPart[]>;
+  /** Custom building tile atlas (image URL) and its tile size in pixels. Defaults to the built-in material atlas. */
+  buildingAtlas?: { src: string; tileSize: number };
+  models?: Record<string, ModelDef>;
+  ships?: Record<string, ShipDef>;
+  place?: PlacementDef[];
+  /** World units per sprite pixel for billboards. @default 1 / tileSize */
+  spriteScale?: number;
+  /** Wind direction in radians (sails, clouds). @default PI/4 */
+  wind?: number;
+}
+
+/** Result of a world pick (screen to ground). */
+export interface WorldHit {
+  /** Ground position in pixels */
+  x: number;
+  y: number;
+  /** Height in world units */
+  height: number;
+  /** True if the ray hit water before land */
+  water: boolean;
+}
+
+/** Runtime access to the 3D world (null in 2D mode). */
+export interface World {
+  /** Time of day 0..1. Settable. */
+  time: number;
+  /** Wind direction in radians. Settable. */
+  wind: number;
+  /** Wave strength (0 flat, 1 normal, 3 storm). Settable. */
+  waves: number;
+  /** Ground height in world units at a ground-pixel position (terrain or roof). */
+  heightAt(x: number, y: number): number;
+  /** True if the ground-pixel position is under water. */
+  isWater(x: number, y: number): boolean;
+  /** Add a building or model at runtime (same shape as a world.place entry). */
+  place(def: PlacementDef): void;
+  /** Cast from a canvas pixel to the ground. Null when the ray misses. */
+  pick(screenX: number, screenY: number): WorldHit | null;
+  /** Camera yaw in radians (the direction 'forward' points for controllers). */
+  readonly cameraYaw: number;
 }
 
 // -----------------------------------------------------------------------------
@@ -579,6 +811,12 @@ export interface Sprite {
   /** Bob frequency in Hz (default 1.5). */
   bobSpeed: number;
 
+  /** 3D mode: height above the ground in world units (jumps, flying). @default 0 */
+  elevation: number;
+
+  /** 3D mode: ride the waves when over water. @default false (true for ships) */
+  floats: boolean;
+
   /**
    * Enable velocity-based movement. When true, Glyft updates x/y from vx/vy each frame.
    * Use this for sprites that move continuously (enemies, projectiles).
@@ -680,7 +918,7 @@ export interface Sprite {
   /** Whether to show an HP bar above the sprite. */
   hpBarVisible: boolean;
 
-  /** HP bar fill value 0.0–1.0 (fraction of max HP). */
+  /** HP bar fill value 0.0-1.0 (fraction of max HP). */
   hpBarValue: number;
 
   /** HP bar width in pixels (default: 40). */
@@ -969,6 +1207,10 @@ export interface Glyft {
   readonly spriteCount: number;
   /** Screen-space overlay for HUD/UI. Lazily initialized, cleared each frame. */
   readonly overlay: CanvasRenderingContext2D;
+  /** The 3D world (settings.mode '3d'), or null in 2D. */
+  readonly world: World | null;
+  /** Resolves when the 3D world has loaded (immediately in 2D). */
+  readonly ready: Promise<void>;
 
   /**
    * Set a static background image that covers the world bounds.

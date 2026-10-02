@@ -115,7 +115,7 @@ Glyft batches everything into a single draw call per texture atlas. Animation, d
 - **GPU particle system** - Burst particles with color/size fade, gravity, spread
 - **GPU ring effects** - Expanding shockwaves with gradients (fire, ice, holy, poison, shadow)
 - **GPU arc effects** - Directional sweeps with shapes (arc, wave, zigzag, axe, spear, thrust)
-- **GPU floating text** - Damage numbers, pickups, XP popups with rise/pop/bounce styles
+- **GPU floating text** - Damage numbers, pickups, XP popups with rise and pop styles
 - **GPU HP bars** - Per-sprite health bars with custom colors
 - **GPU labels** - Sprite names and icons with visibility modes (always, hover, proximity)
 - **Tween system** - Animate any property with easing curves (easeIn, easeOut, bounce, elastic)
@@ -165,14 +165,14 @@ Define sound effects and music as config data - no audio files required.
 
 ```typescript
 const config = {
-  // Sound effects — procedural synthesis from parameters
+  // Sound effects: procedural synthesis from parameters
   sfx: {
     laser:  { wave: 'sine', freq: 880, duration: 0.15, sweep: 440 },
     coin:   { wave: 'square', freq: 1400, duration: 0.1, sweep: 2100, sweepTime: 0.05 },
     hurt:   { wave: 'sawtooth', freq: 200, duration: 0.2, noise: 0.2 },
   },
 
-  // Music — melodies from note sequences
+  // Music: melodies from note sequences
   music: {
     village: {
       bpm: 56, wave: 'sine',
@@ -205,6 +205,46 @@ collisions: {
 }
 ```
 
+## 3D Worlds
+
+Set `mode: '3d'` and describe the world. Your game logic does not change: sprites keep `x`/`y` in pixels on the ground, `vx`/`vy`, collisions, sounds and stats. Glyft lifts them onto the terrain (one tile = one world unit).
+
+```typescript
+const config: GlyftConfig = {
+  settings: { tileSize: 16, viewport: [960, 540], mode: '3d' },
+  world: {
+    terrain: {
+      heightmap: { generate: 'island', size: 128, seed: 4 },   // or 'map.png' or number[][]
+      maxHeight: 16,
+      water: { height: 3.2, style: 'ocean', waves: 1 },
+    },
+    sky: { time: 0.3, dayLength: 240 },                          // day/night drives all lighting
+    camera: { mode: 'follow', target: 'hero', distance: 11 },     // follow, orbit, fps, fixed
+    controller: { sprite: 'hero', speed: 90, jump: 2 },           // WASD relative to the camera
+    buildings: {
+      hut: [
+        { type: 'box', position: [0, 0, 0], size: [4, 2.6, 4], faces: { all: 'plaster' } },
+        { type: 'roof', position: [0, 2.6, 0], size: [4.6, 1.8, 4.6], faces: { all: 'thatch' } },
+      ],
+    },
+    ships: { sloop: { preset: 'sloop' } },                        // sprites of type 'sloop' sail
+    place: [{ building: 'hut', at: [960, 1100] }],
+  },
+};
+
+const game = new Glyft(canvas, config);
+await game.loadTexture('hero', 'hero.png', { frameWidth: 32, frameHeight: 32 });
+await game.ready;                       // terrain exists from here
+game.spawn('hero', 60, 68);
+game.spawn('sloop', 60, 90).vx = 70;    // ships turn to face their velocity and ride the waves
+game.start();
+```
+
+- **Types map to looks:** atlas sprites become camera-facing billboards, `world.ships` types become procedural ships, `world.models` types become glTF models.
+- **Zero assets:** terrain, buildings and ships use built-in materials (`sand`, `grass`, `rock`, `snow`, `stone`, `brick`, `plaster`, `wood`, `planks`, `thatch`, `slate`, `door`, `window` and more). Any slot also takes a hex colour or an image URL.
+- **Runtime:** `game.world.time`, `wind`, `waves`, `heightAt(x, y)`, `isWater(x, y)`, `pick(screenX, screenY)`, `place({ building, at })`.
+- Effects, labels and HP bars follow sprites into 3D. Clicks raycast the ground, so `pointerdown` gives ground coordinates.
+
 ## Examples
 
 ```bash
@@ -214,6 +254,7 @@ cd glyft && npm install && npm run dev
 # http://localhost:5173/examples/rpg/
 # http://localhost:5173/examples/platformer/
 # http://localhost:5173/examples/shmup/
+# http://localhost:5173/examples/island/
 ```
 
 | Example | Features |
@@ -223,6 +264,7 @@ cd glyft && npm install && npm run dev
 | RPG | Multi-room dungeon, NPCs, dialogue, combat, projectiles, particles, HP bars, labels |
 | Platformer | Gravity, jumping, platforms, stomping enemies, collectibles, coyote time |
 | Shmup | Bullet hell, radial/spiral/aimed patterns, bombs, graze scoring, boss fights |
+| Island | 3D: generated island, ocean waves, day/night sky, village, follow camera, boarding and sailing a boat |
 
 ## License
 
@@ -233,6 +275,6 @@ A [commercial license](https://glyft.dev/license) is required for:
 - Closed-source applications
 - Client work and internal business tools
 
-**$80 one-time** — covers your team forever, including future updates.
+**$80 one-time**. It covers your team forever, including future updates.
 
 See [LICENSE.md](./LICENSE.md) for full terms.

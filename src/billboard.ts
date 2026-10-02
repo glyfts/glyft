@@ -86,6 +86,7 @@ export interface BillboardSystem {
     viewportW: number,
     viewportH: number,
     fog?: { color: Vec3; near: number; far: number },
+    lightTint?: Vec3,
   ): void;
   /** Destroy GPU resources */
   destroy(): void;
@@ -107,7 +108,7 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
     [
       'u_viewProj', 'u_cameraPos', 'u_cameraRight', 'u_cameraUp',
       'u_time', 'u_atlasSize', 'u_spriteMode', 'u_atlas',
-      'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_shadowPass',
+      'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_shadowPass', 'u_lightTint',
     ],
     ['a_position', 'a_worldPos', 'a_velocity', 'a_frame', 'a_anim', 'a_props', 'a_override'],
   );
@@ -184,7 +185,7 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
   let startTime = 0;
 
   return {
-    render(sprites, atlas, camera, vp, _viewportW, _viewportH, fog) {
+    render(sprites, atlas, camera, vp, _viewportW, _viewportH, fog, lightTint) {
       if (sprites.length === 0) return;
       if (startTime === 0) startTime = performance.now() / 1000;
       const time = performance.now() / 1000 - startTime;
@@ -292,6 +293,8 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
         gl.uniform1f(shader.uniforms.u_fogNear, 1000);
         gl.uniform1f(shader.uniforms.u_fogFar, 1001);
       }
+
+      gl.uniform3fv(shader.uniforms.u_lightTint, lightTint ?? [1, 1, 1]);
 
       // Texture
       gl.activeTexture(gl.TEXTURE0);

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glyft - Island</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #10141c;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: system-ui, sans-serif;
+    }
+    .container { text-align: center; }
+    canvas {
+      width: min(960px, 100vw);
+      aspect-ratio: 16 / 9;
+      display: block;
+    }
+    .info { color: #889; margin-top: 0.75rem; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <canvas id="game"></canvas>
+    <p class="info">WASD to walk, Shift to run, Space to jump, drag or Q/E to turn the camera, wheel to zoom, F at the shore to board the boat</p>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

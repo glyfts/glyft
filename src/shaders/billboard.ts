@@ -171,6 +171,7 @@ uniform vec3 u_fogColor;
 uniform float u_fogNear;
 uniform float u_fogFar;
 uniform int u_shadowPass;
+uniform vec3 u_lightTint;
 
 in vec2 v_texCoord;
 in float v_alpha;
@@ -199,7 +200,7 @@ void main() {
   vec4 texColor = texture(u_atlas, v_texCoord);
   if (texColor.a < 0.01) discard;
 
-  vec3 color = texColor.rgb * v_tint;
+  vec3 color = texColor.rgb * v_tint * u_lightTint;
 
   float fogFactor = clamp((v_fogDist - u_fogNear) / (u_fogFar - u_fogNear), 0.0, 1.0);
   color = mix(color, u_fogColor, fogFactor);

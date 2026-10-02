@@ -83,37 +83,24 @@ export type { RingEffectDef, RingEmitOptions } from './rings';
 // Re-export from network for convenience
 export type { NetworkAdapter as INetworkAdapter } from './network';
 
-// 3D terrain subsystem
-export { createTerrainSystem } from './terrain';
-export type { TerrainConfig, Camera3D, TerrainSystem } from './terrain';
-
-// Billboard sprite system
-export { createBillboardSystem } from './billboard';
-export type { BillboardSprite, BillboardAtlas, BillboardSystem } from './billboard';
-
-// Mesh system (buildings, props)
-export { createMeshSystem } from './mesh';
-export type { MeshPart, BuildingDef, BuildingInstance, MeshSystem } from './mesh';
-
-// Model system (loaded 3D models)
-export { createModelSystem } from './model';
-export type { ModelInstance, ModelSystem } from './model';
-
-// Ocean wave system (Gerstner waves)
-export { sampleWaveHeight, sampleWaveNormal, waveParams, DEFAULT_WAVES } from './waves';
-export type { WaveDef } from './waves';
-
-// glTF loader
-export { loadGltf } from './loaders/gltf';
-export type { GltfModel, GltfPrimitive } from './loaders/gltf';
-
-// First-person camera
-export { FPSCamera } from './fps-camera';
-export type { FPSCameraConfig } from './fps-camera';
-
-// 3D math utilities
-export { vec3, mat4Perspective, mat4LookAt, mat4Multiply, project } from './math3d';
-export type { Vec3, Mat4 } from './math3d';
+// 3D worlds are declared in config (settings.mode '3d' + config.world)
+export type {
+  WorldConfig,
+  World,
+  WorldHit,
+  WorldTexture,
+  TerrainDef,
+  HeightmapGenerator,
+  SkyDef,
+  CameraDef,
+  ControllerDef,
+  BuildingPart,
+  ModelDef,
+  ShipDef,
+  PlacementDef,
+} from './types';
+export { MATERIAL_NAMES } from './materials';
+export type { MaterialName } from './materials';
 
 // Re-export helpers for convenience (also available as 'glyft/helpers')
 export * from './helpers';

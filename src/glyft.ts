@@ -46,6 +46,7 @@ import { createRingEffectManager, type RingEffectManager, type RingEffectDef, ty
 import { createDomTextManager, type DomTextManager } from './domtext';
 import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
 import { backgroundVertexShader, backgroundFragmentShader } from './shaders/background';
+import { createWorldSystem, type WorldSystem } from './world3d';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -90,6 +91,8 @@ interface InternalSprite {
   glowColor: number | null;
   glowRadius: number;
   clipBottom: number;  // 0.0-1.0: clip bottom portion of sprite (for wading in water)
+  elevation: number;  // 3D: height above ground in world units
+  floats: boolean;    // 3D: ride the waves
   atlas: InternalAtlas;
   exists: boolean;
   // Named animation registry
@@ -238,6 +241,11 @@ export class GlyftEngine {
   // Addon system
   private _addons: import('./types').GlyftAddon[] = [];
 
+  // 3D world (settings.mode '3d')
+  private _world: WorldSystem | null = null;
+  private _worldLoad: Promise<void> | null = null;
+  private _labelScreen = new Map<string, LabelSpriteData>();
+
   /**
    * Create a new Glyft game engine instance.
    *
@@ -265,7 +273,7 @@ export class GlyftEngine {
     this.config = config;
 
     // Initialize WebGL
-    this.gl = createContext(canvas, { depth: config.settings.depth, alpha: config.settings.alpha });
+    this.gl = createContext(canvas, { depth: config.settings.depth || config.settings.mode === '3d', alpha: config.settings.alpha });
     this._initShaders();
     this._initBuffers();
 
@@ -285,9 +293,9 @@ export class GlyftEngine {
     // Pointer event dispatch (click → sprite callbacks + game-level event)
     canvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return; // Primary button only
-      const pointer = this._input.pointer;
-      const worldX = pointer.x + this._camera.x;
-      const worldY = pointer.y + this._camera.y;
+      const ground = this._pointerWorld();
+      if (!ground) return;
+      const [worldX, worldY] = ground;
 
       const hit = this._getTopSpriteAtPoint(worldX, worldY);
       if (hit) {
@@ -309,9 +317,8 @@ export class GlyftEngine {
     // Clear hover state when pointer leaves canvas
     canvas.addEventListener('pointerleave', () => {
       if (this._hoveredSprite && this._hoveredSprite.exists) {
-        const pointer = this._input.pointer;
-        this._fireSpriteEvent(this._hoveredSprite, 'pointerout',
-          pointer.x + this._camera.x, pointer.y + this._camera.y);
+        const ground = this._pointerWorld() ?? [0, 0];
+        this._fireSpriteEvent(this._hoveredSprite, 'pointerout', ground[0], ground[1]);
       }
       this._hoveredSprite = null;
     });
@@ -361,6 +368,62 @@ export class GlyftEngine {
     // Enable blending for sprite transparency
     this.gl.enable(this.gl.BLEND);
     this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+
+    // 3D world: built from config.world, loads its assets in the background
+    if (config.settings.mode === '3d') {
+      const mode = config.settings.spriteMode;
+      const bbMode = mode === '8dir' ? '8dir' : mode === '1dir' ? '1dir' : '4dir';
+      this._world = createWorldSystem(this.gl, canvas, config.world ?? {}, config.settings.tileSize, bbMode);
+      this._registerWorldAtlas();
+      this._worldLoad = this._world.load();
+      this._worldLoad.catch((err) => console.error('[Glyft] World failed to load:', err));
+    }
+  }
+
+  /** Ships and models are sprites too: give them atlas frames sized to their footprint. */
+  private _registerWorldAtlas(): void {
+    const world = this._world!;
+    const types = [...Object.keys(this.config.world?.ships ?? {}), ...Object.keys(this.config.world?.models ?? {})];
+    if (types.length === 0) return;
+    const texture = this.gl.createTexture()!;
+    this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
+    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, 1, 1, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+    const frames = new Map<string, { x: number; y: number; w: number; h: number }>();
+    for (const type of types) {
+      const [w, h] = world.footprintOf(type)!;
+      frames.set(type, { x: 0, y: 0, w, h });
+    }
+    this._atlases.set('__world', { name: '__world', texture, width: 1, height: 1, frames, tags: new Map() });
+  }
+
+  /** Pointer position on the ground in world pixels (2D: screen + camera, 3D: terrain raycast). */
+  private _pointerWorld(): [number, number] | null {
+    const pointer = this._input.pointer;
+    if (!this._world) return [pointer.x + this._camera.x, pointer.y + this._camera.y];
+    const [vw, vh] = this.config.settings.viewport;
+    const sx = (pointer.x / vw) * this.canvas.width;
+    const sy = (pointer.y / vh) * this.canvas.height;
+    const hit = this._world.pick(sx, sy);
+    return hit ? [hit.x, hit.y] : null;
+  }
+
+  /** Effect anchor: world pixels in 2D, projected viewport pixels in 3D. */
+  private _fx(x: number, y: number): [number, number] {
+    if (!this._world) return [x, y];
+    const p = this._world.project(x, y, this._world.surfaceAt(x, y) + 1);
+    if (!p) return [-10000, -10000];
+    const [vw, vh] = this.config.settings.viewport;
+    return [(p[0] / this.canvas.width) * vw, (p[1] / this.canvas.height) * vh];
+  }
+
+  /** The 3D world, or null in 2D mode. */
+  get world(): import('./types').World | null {
+    return this._world;
+  }
+
+  /** Resolves when the 3D world has loaded (immediately in 2D). Place sprites on terrain after this. */
+  get ready(): Promise<void> {
+    return this._worldLoad ?? Promise.resolve();
   }
 
   // ---------------------------------------------------------------------------
@@ -393,6 +456,13 @@ export class GlyftEngine {
     }
 
     const { settings } = config;
+
+    if (config.world && settings.mode !== '3d') {
+      throw new GlyftError(
+        'config.world needs 3D mode',
+        "Add mode: '3d' to settings:\n\nsettings: { tileSize: 16, viewport: [960, 540], mode: '3d' }"
+      );
+    }
 
     // Validate tileSize
     const validTileSizes = [8, 16, 32, 64];
@@ -1124,13 +1194,15 @@ export class GlyftEngine {
       visualOffsetY: 0,
       shadowScale: 1.0,
       shadowAlpha: 0.5,
-      physics: false,
+      physics: internalAtlas.name === '__world', // ships and models move by velocity
       autoFlip: false,
       spriteMode: null,
       glow: 0,
       glowColor: null,
       glowRadius: 1.5,
       clipBottom: 0,
+      elevation: 0,
+      floats: false,
       atlas: internalAtlas,
       exists: true,
       animations: new Map(),
@@ -1250,6 +1322,10 @@ export class GlyftEngine {
       set bob(v: number) { sprite.bob = Math.min(255, Math.max(0, v)); },
       get bobSpeed() { return sprite.bobSpeed; },
       set bobSpeed(v: number) { sprite.bobSpeed = Math.min(25.5, Math.max(0, v)); },
+      get elevation() { return sprite.elevation; },
+      set elevation(v: number) { sprite.elevation = v; },
+      get floats() { return sprite.floats; },
+      set floats(v: boolean) { sprite.floats = v; },
       get physics() { return sprite.physics; },
       set physics(v: boolean) { sprite.physics = v; },
       get autoFlip() { return sprite.autoFlip; },
@@ -1641,7 +1717,8 @@ export class GlyftEngine {
 
   /** Spawn floating text at world position (GPU-rendered) */
   floatText(x: number, y: number, text: string, options?: import('./types').FloatTextOptions): void {
-    this._floatTextManager.spawn(x, y, text, this._time, options);
+    const [fx, fy] = this._fx(x, y);
+    this._floatTextManager.spawn(fx, fy, text, this._time, options);
   }
 
   /**
@@ -1680,7 +1757,7 @@ export class GlyftEngine {
     const self = this;
     return {
       define(name: string, def: import('./types').ParticleEmitterDef) { self._particleManager.define(name, def); },
-      emit(name: string, x: number, y: number) { self._particleManager.emit(name, x, y, self._time); },
+      emit(name: string, x: number, y: number) { const [fx, fy] = self._fx(x, y); self._particleManager.emit(name, fx, fy, self._time); },
     };
   }
 
@@ -1690,7 +1767,8 @@ export class GlyftEngine {
     return {
       define(name: string, def: ArcEffectDef) { self._arcManager.define(name, def); },
       emit(name: string, x: number, y: number, angle: number, arcDegrees: number, range: number, options?: ArcEmitOptions) {
-        self._arcManager.emit(name, x, y, angle, arcDegrees, range, self._time, options);
+        const [fx, fy] = self._fx(x, y);
+        self._arcManager.emit(name, fx, fy, angle, arcDegrees, range, self._time, options);
       },
     };
   }
@@ -1701,7 +1779,8 @@ export class GlyftEngine {
     return {
       define(name: string, def: RingEffectDef) { self._ringManager.define(name, def); },
       emit(name: string, x: number, y: number, options?: RingEmitOptions) {
-        self._ringManager.emit(name, x, y, self._time, options);
+        const [fx, fy] = self._fx(x, y);
+        self._ringManager.emit(name, fx, fy, self._time, options);
       },
     };
   }
@@ -1833,6 +1912,13 @@ export class GlyftEngine {
   start(): void {
     this._running = true;
     this._lastFrameTime = performance.now();
+    if (this._worldLoad && !this._world?.ready) {
+      this._worldLoad.then(() => {
+        this._lastFrameTime = performance.now();
+        this._loop();
+      });
+      return;
+    }
     this._loop();
   }
 
@@ -1951,8 +2037,19 @@ export class GlyftEngine {
     // Update pointer hover tracking (fires pointerover/pointerout)
     this._updatePointerEvents();
 
+    // 3D controller input (camera-relative), before sprites move
+    this._world?.prePhysics(this._dt, this._sprites, this._input);
+
     // Update sprite physics (velocity-based movement, auto-flip)
     this._updatePhysics(this._dt);
+
+    // 3D: blocking, ground height, jumps, buoyancy, headings
+    this._world?.postPhysics(this._dt, this._sprites);
+
+    // Clear the overlay before anyone draws on it this frame (user callbacks and addons)
+    if (this._overlayActive && this._overlayCtx) {
+      this._overlayCtx.clearRect(0, 0, this._overlayCanvas!.width, this._overlayCanvas!.height);
+    }
 
     // Addon: preUpdate (before user callbacks)
     for (const addon of this._addons) addon.preUpdate?.(this._dt);
@@ -1973,11 +2070,6 @@ export class GlyftEngine {
 
     // Run reactive sound triggers
     this._updateReactiveSounds();
-
-    // Clear overlay canvas before addons draw on it
-    if (this._overlayActive && this._overlayCtx) {
-      this._overlayCtx.clearRect(0, 0, this._overlayCanvas!.width, this._overlayCanvas!.height);
-    }
 
     // Addon: postPhysics (after collisions, before render)
     for (const addon of this._addons) addon.postPhysics?.(this._dt);
@@ -2054,9 +2146,9 @@ export class GlyftEngine {
 
   /** Per-frame hover tracking — fires pointerover/pointerout on interactive sprites. */
   private _updatePointerEvents(): void {
-    const pointer = this._input.pointer;
-    const worldX = pointer.x + this._camera.x;
-    const worldY = pointer.y + this._camera.y;
+    const ground = this._pointerWorld();
+    if (!ground) return;
+    const [worldX, worldY] = ground;
 
     const hit = this._getTopSpriteAtPoint(worldX, worldY);
 
@@ -2267,14 +2359,15 @@ export class GlyftEngine {
         applyCollisionAction(action, proxyA, proxyB, {
           stats: this._stats,
           sounds: this.sounds,
-          floatText: (x, y, text, opts) => this._floatTextManager.spawn(x, y, text, this._time, opts),
+          floatText: (x, y, text, opts) => this.floatText(x, y, text, opts),
         });
 
         // Emit particles at collision midpoint
         if (action.particles) {
           const cx = (spriteA.x + spriteB.x) / 2 + (spriteA.frameW + spriteB.frameW) / 4;
           const cy = (spriteA.y + spriteB.y) / 2 + (spriteA.frameH + spriteB.frameH) / 4;
-          this._particleManager.emit(action.particles, cx, cy, this._time);
+          const [fx, fy] = this._fx(cx, cy);
+          this._particleManager.emit(action.particles, fx, fy, this._time);
         }
 
         // Play collision sound if defined in sound rules
@@ -2532,6 +2625,11 @@ export class GlyftEngine {
     resizeCanvas(this.canvas, viewport);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 
+    if (this._world) {
+      this._render3D();
+      return;
+    }
+
     // Clear
     gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -2582,6 +2680,62 @@ export class GlyftEngine {
     this._floatTextManager.render(projection, this._time, this._camera.x, this._camera.y);
 
     // Render overlay (screen-space Canvas2D → WebGL texture)
+    this._renderOverlay();
+  }
+
+  /** 3D frame: world first, then 2D effects projected to the screen (camera at 0,0). */
+  private _render3D(): void {
+    const gl = this.gl;
+    const world = this._world!;
+    const viewport = this.config.settings.viewport;
+    const [cr, cg, cb] = world.clearColor();
+    gl.clearColor(cr, cg, cb, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    world.render(this._dt, this._sprites, this._time, this.canvas.width, this.canvas.height);
+
+    const projection = this._calculateProjection();
+    const sx = viewport[0] / this.canvas.width;
+    const sy = viewport[1] / this.canvas.height;
+    const pxScale = this.config.world?.spriteScale ?? 1 / this.config.settings.tileSize;
+
+    // Labels and HP bars read sprite positions: feed them screen positions above each head
+    const screen = this._labelScreen;
+    for (const s of this._sprites.values()) {
+      if (s.labelSlot < 0) continue;
+      let entry = screen.get(s.id);
+      if (!entry) {
+        entry = { id: s.id, x: 0, y: 0, frameW: 0, exists: true, labelSlot: -1, labelVisible: 'always', labelRange: 0, hpBarVisible: false };
+        screen.set(s.id, entry);
+      }
+      const head = world.spriteHeight(s) + s.frameH * pxScale * s.scale;
+      const p = s.exists ? world.project(s.x + s.frameW / 2, s.y + s.frameH / 2, head) : null;
+      entry.exists = !!p;
+      entry.frameW = s.frameW;
+      entry.x = p ? p[0] * sx - s.frameW / 2 : 0;
+      entry.y = p ? p[1] * sy : 0;
+      entry.labelSlot = s.labelSlot;
+      entry.labelVisible = s.labelVisible === 'proximity' ? 'always' : s.labelVisible;
+      entry.labelRange = s.labelRange;
+      entry.hpBarVisible = s.hpBarVisible;
+    }
+    if (screen.size > this._sprites.size) {
+      for (const id of screen.keys()) if (!this._sprites.has(id)) screen.delete(id);
+    }
+    this._labelManager.updatePositions(screen, 0, 0, viewport[0], viewport[1], this._hoveredSprite?.id ?? null);
+    this._labelManager.render(projection, 0, 0);
+
+    const activeHpSlots: number[] = [];
+    this._sprites.forEach((s) => {
+      if (s.exists && s.hpBarVisible && s.labelSlot >= 0) activeHpSlots.push(s.labelSlot);
+    });
+    this._hpBarManager.updateActiveSlots(activeHpSlots);
+    this._hpBarManager.render(projection, 0, 0);
+
+    this._particleManager.render(projection, this._time, 0, 0);
+    this._arcManager.render(projection, this._time, 0, 0);
+    this._ringManager.render(projection, this._time, 0, 0);
+    this._floatTextManager.render(projection, this._time, 0, 0);
     this._renderOverlay();
   }
 

@@ -7,8 +7,8 @@
 
 import { compileShader } from './renderer';
 import { meshVertexShader, meshFragmentShader } from './shaders/mesh';
-import { vec3Normalize, type Mat4 } from './math3d';
-import type { Camera3D } from './terrain';
+import type { Mat4 } from './math3d';
+import type { Camera3D, Lighting } from './terrain';
 import type { GltfModel, GltfPrimitive } from './loaders/gltf';
 
 // ---- Public Types ----
@@ -30,7 +30,7 @@ export interface ModelSystem {
   /** Set instance placements for rendering */
   setInstances(instances: ModelInstance[]): void;
   /** Render all model instances */
-  render(camera: Camera3D, vp: Mat4, viewportW: number, viewportH: number): void;
+  render(camera: Camera3D, vp: Mat4, lighting: Lighting): void;
   /** Clean up all GPU resources */
   destroy(): void;
 }
@@ -173,19 +173,17 @@ export function createModelSystem(
       instances = insts;
     },
 
-    render(camera: Camera3D, vp: Mat4, _viewportW: number, _viewportH: number) {
+    render(camera: Camera3D, vp: Mat4, lighting: Lighting) {
       if (instances.length === 0) return;
 
       gl.useProgram(shader.program);
       gl.uniformMatrix4fv(shader.uniforms.u_viewProj, false, vp);
-
-      const lightDir = vec3Normalize([0.3, 1.0, 0.5]);
-      gl.uniform3fv(shader.uniforms.u_lightDir, lightDir);
-      gl.uniform3f(shader.uniforms.u_ambientColor, 0.35, 0.35, 0.4);
-      gl.uniform3f(shader.uniforms.u_lightColor, 1.0, 0.95, 0.85);
-      gl.uniform3f(shader.uniforms.u_fogColor, 0.6, 0.7, 0.85);
-      gl.uniform1f(shader.uniforms.u_fogNear, camera.far * 0.5);
-      gl.uniform1f(shader.uniforms.u_fogFar, camera.far);
+      gl.uniform3fv(shader.uniforms.u_lightDir, lighting.lightDir);
+      gl.uniform3fv(shader.uniforms.u_ambientColor, lighting.ambient);
+      gl.uniform3fv(shader.uniforms.u_lightColor, lighting.light);
+      gl.uniform3fv(shader.uniforms.u_fogColor, lighting.fogColor);
+      gl.uniform1f(shader.uniforms.u_fogNear, lighting.fogNear);
+      gl.uniform1f(shader.uniforms.u_fogFar, lighting.fogFar);
       gl.uniform3fv(shader.uniforms.u_cameraPos, camera.position);
 
       for (const inst of instances) {
