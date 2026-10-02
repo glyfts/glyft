@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/glyft"><img src="https://img.shields.io/npm/v/glyft?style=flat-square&color=cb3837" alt="npm"></a>
+  <a href="https://github.com/glyfts/glyft/tags"><img src="https://img.shields.io/github/v/tag/glyfts/glyft?style=flat-square&color=cb3837&label=version" alt="version"></a>
   <img src="https://img.shields.io/badge/language-TypeScript-3178c6?style=flat-square" alt="TypeScript">
   <img src="https://img.shields.io/badge/runtime-WebGL2-ff6600?style=flat-square" alt="WebGL2">
   <img src="https://img.shields.io/badge/dependencies-0-success?style=flat-square" alt="Zero Dependencies">
@@ -49,8 +49,11 @@ No animation state machine. No frame counters. No direction enums. Set velocity,
 ## Quick Start
 
 ```bash
-npm install glyft
+npm install github:glyfts/glyft          # latest
+npm install github:glyfts/glyft#v0.2.0   # or pin a version
 ```
+
+It installs straight from GitHub and builds itself on install. Use it with any bundler (Vite, webpack, esbuild).
 
 ```typescript
 import { Glyft } from 'glyft';
