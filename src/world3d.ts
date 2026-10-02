@@ -361,7 +361,8 @@ export function createWorldSystem(
 
   // Boarding (controller.board): the player rides a vehicle sprite
   const board = ctrl?.board;
-  let riding: { rider: string; vehicle: string; tags: string[]; alpha: number } | null = null;
+  // Ships carry the rider below deck (hidden); any other vehicle is a mount the rider sits on
+  let riding: { rider: string; vehicle: string; tags: string[]; alpha: number; mounted: boolean; elevation: number } | null = null;
 
   /** The sprite the keyboard drives right now: the vehicle while riding, else controller.sprite. */
   function driven(sprites: Map<string, WorldSprite>): WorldSprite | null {
@@ -407,6 +408,7 @@ export function createWorldSystem(
           rider.y = y - rider.frameH / 2;
           rider.tags.push(...riding.tags);
           rider.alpha = riding.alpha;
+          rider.elevation = riding.elevation;
           rider.physics = true;
           v.vx = 0; v.vy = 0;
           riding = null;
@@ -426,8 +428,10 @@ export function createWorldSystem(
     }
     if (!best) return;
     // Out of play while aboard: no tags means no collision rules match the rider
-    riding = { rider: rider.id, vehicle: best.id, tags: rider.tags.splice(0), alpha: rider.alpha };
-    rider.alpha = 0;
+    const mounted = !shipTypes.has(best.type);
+    riding = { rider: rider.id, vehicle: best.id, tags: rider.tags.splice(0), alpha: rider.alpha, mounted, elevation: rider.elevation };
+    if (mounted) rider.elevation = board!.seat ?? best.frameH * pxScale * 0.45;
+    else rider.alpha = 0;
     rider.physics = false;
     rider.vx = 0; rider.vy = 0;
   }
@@ -755,7 +759,8 @@ export function createWorldSystem(
       s.physics = true;
 
       const sprint = input.isDown('ShiftLeft') || input.isDown('ShiftRight') ? (ctrl.sprint ?? 1.6) : 1;
-      const speed = (ctrl.speed ?? 96) * sprint;
+      const baseSpeed = riding?.mounted ? (board?.speed ?? (ctrl.speed ?? 96) * 1.5) : (ctrl.speed ?? 96);
+      const speed = baseSpeed * sprint;
       let fwd = 0, right = 0;
       if (input.isDown('KeyW') || input.isDown('ArrowUp')) fwd += 1;
       if (input.isDown('KeyS') || input.isDown('ArrowDown')) fwd -= 1;
@@ -803,6 +808,7 @@ export function createWorldSystem(
         if (rider && v) {
           rider.x = v.x + v.frameW / 2 - rider.frameW / 2;
           rider.y = v.y + v.frameH / 2 - rider.frameH / 2;
+          if (riding.mounted) facing.set(rider.id, facing.get(v.id) ?? 0);
         }
       }
 
@@ -952,7 +958,7 @@ export function createWorldSystem(
       const nowSec = performance.now() / 1000;
 
       for (const s of sprites.values()) {
-        if (!s.exists || s === hideForFps || (riding && s.id === riding.rider)) continue;
+        if (!s.exists || s === hideForFps || (riding && !riding.mounted && s.id === riding.rider)) continue;
         if (attack && s.type === attack.spawn) continue; // hitboxes are invisible
         const [wx, wz] = footOf(s);
         const y = world.spriteHeight(s);
@@ -984,6 +990,13 @@ export function createWorldSystem(
           billboardCache.set(s.id, b);
         }
         b.x = wx; b.y = y; b.z = wz; b.facing = face;
+        if (riding?.mounted && s.id === riding.rider) {
+          // Sit just in front of the mount (toward the camera) so the two quads never fight
+          const cx = cam.position[0] - wx, cz = cam.position[2] - wz, len = Math.hypot(cx, cz) || 1;
+          b.x += (cx / len) * 0.12; b.z += (cz / len) * 0.12;
+          const v = sprites.get(riding.vehicle);
+          if (v) { b.vx = v.vx * pxScale; b.vz = v.vy * pxScale; b.speed = 0; }
+        }
         b.vx = s.vx * pxScale; b.vz = s.vy * pxScale; b.speed = Math.hypot(b.vx, b.vz);
         const flashUntil = s.data._flashUntil as number | undefined;
         b.scale = s.scale; b.alpha = s.alpha; b.flipX = s.flipX;

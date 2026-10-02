@@ -252,7 +252,8 @@ await game.start();
 ```
 
 - **Places, not coordinates:** `where` takes `'land'`, `'flat'`, `'hills'`, `'shore'`, `'sea'` or an exact `[x, y]`; `near` keeps things close to something placed earlier; `count` and `spacing` do the rest.
-- **Fighting is a rule too:** `controller.attack: { spawn: 'slash', frames: [4, 1] }` puts a hitbox sprite in front of the player on click, and `'[enemy]:slash': { damage: 25 }` decides what it does.
+- **Combat:** `controller.attack: { spawn: 'slash', frames: [4, 1] }` puts a short-lived hitbox in front of the player on click, and collision rules such as `'[enemy]:slash': { damage: 25 }` decide what a hit does.
+- **Vehicles and mounts built in:** `controller.board: { vehicles: ['boat', 'horse'] }`. Ships float and steer like boats; anything else is a mount the rider sits on.
 - **Rules for movement:** `world.blockedBy` stops every moving sprite at water, cliffs and buildings; ships are stopped by land. Addons take tag rules too (`ai({ auto })`, `death({ auto, playerRespawn })`).
 - **Types map to looks:** atlas sprites become billboards, `world.ships` types become procedural ships that float and turn to face their velocity, `world.models` types become glTF models.
 - **Zero assets:** built-in materials (`sand`, `grass`, `rock`, `snow`, `stone`, `brick`, `plaster`, `wood`, `planks`, `thatch`, `slate`, `door`, `window` and more). Any slot also takes a hex colour or an image URL.

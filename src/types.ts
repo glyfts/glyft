@@ -579,11 +579,23 @@ export interface ControllerDef {
   /** Steepest walkable slope as the minimum surface normal Y (1 flat, 0 wall). @default 0.65 */
   maxSlope?: number;
   /**
-   * Boarding: press `key` near a sprite of one of these types (ships, mounts) to take control of it.
-   * The rider is hidden and carried along; press again near land to step off.
+   * Vehicles and mounts: press `key` near a sprite of one of these types to take control of it.
+   * Ships carry the rider below deck and steer like boats; any other type is a mount the rider sits
+   * on, driven with the walking controls. Press again to step off (ships need land nearby).
    * @example { vehicles: ['cutter'], key: 'KeyF', range: 80 }
    */
-  board?: { vehicles: string[]; key?: string; range?: number };
+  board?: {
+    /** Sprite types that can be boarded. Ships carry the rider below deck; anything else is a mount the rider sits on. */
+    vehicles: string[];
+    /** @default 'KeyF' */
+    key?: string;
+    /** Pixels from the vehicle's edge. @default 64 */
+    range?: number;
+    /** Mounts: rider height above the mount's feet in world units. @default 45% of the mount's sprite height */
+    seat?: number;
+    /** Mounts: speed in pixels per second. @default 1.5x the controller speed */
+    speed?: number;
+  };
   /**
    * Attacking: on click (or `key`) the player plays its attack frames and a short-lived,
    * invisible hitbox sprite of type `spawn` appears in front of it. What a hit does is a
