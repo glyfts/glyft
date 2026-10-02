@@ -130,7 +130,7 @@ const platforms = [
 
 for (const [px, py, pw] of platforms) {
   for (let x = px; x < px + pw; x++) {
-    map.set(x, py, 3);
+    map.set(x, py, 15); // planks
     map.setCollision(x, py, true);
   }
 }
@@ -154,6 +154,7 @@ player.x = 32;
 player.y = 160;
 player.tags = ['player'];
 player.shadow = true;
+player.rowOffset = 1; // side view: use the right-facing row (the GPU flips it for left)
 
 // Player physics state
 let velocityY = 0;
@@ -172,11 +173,10 @@ const coinPositions = [
 ];
 
 for (const [cx, cy] of coinPositions) {
-  const coin = game.createSprite(atlas, 'player');
+  const coin = game.createSprite(atlas, 'coin');
   coin.x = cx * 16 + 8;
   coin.y = cy * 16 + 8;
-  coin.tint = 0xffdd44;
-  coin.scale = 0.5;
+  coin.scale = 0.7;
   coin.bob = 3;
   coin.bobSpeed = 1.2;
   coin.tags = ['coin', 'collectible'];
@@ -193,11 +193,11 @@ const enemySpawns = [
 ];
 
 for (const spawn of enemySpawns) {
-  const enemy = game.createSprite(atlas, 'player');
+  const enemy = game.createSprite(atlas, 'slime');
   enemy.x = spawn.x * 16;
   enemy.y = spawn.y * 16;
-  enemy.tint = 0xff6666;
   enemy.tags = ['enemy'];
+  enemy.rowOffset = 1;
   enemy.hp = 1;
   enemy.data.startX = spawn.patrol[0] * 16;
   enemy.data.endX = spawn.patrol[1] * 16;

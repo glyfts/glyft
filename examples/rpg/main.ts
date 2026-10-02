@@ -189,11 +189,15 @@ function buildRoom(map: TileMap, roomId: string, roomData: typeof ROOM_DATA[stri
   const exits = getExitsForRoom(roomId);
 
   // Floor
-  const floorTile = roomId === 'dungeon' ? 5 : roomId === 'forest' ? 3 : 1;
+  // Starter atlas tiles: 1 grass, 2 stone wall, 4 tree, 5 stone floor, 6 dungeon wall, 7 crate, 12 path, 13 boulder
+  const floorTile = roomId === 'dungeon' ? 5 : 1;
   map.fill(0, 0, width, height, floorTile);
+  if (roomId === 'village') {
+    for (let x = 1; x < width - 1; x++) map.set(x, Math.floor(height / 2), 12);
+  }
 
   // Walls around edges
-  const wallTile = roomId === 'dungeon' ? 6 : 2;
+  const wallTile = roomId === 'dungeon' ? 6 : roomId === 'forest' ? 4 : 2;
   for (let x = 0; x < width; x++) {
     map.set(x, 0, wallTile); map.set(x, height - 1, wallTile);
     map.setCollision(x, 0, true); map.setCollision(x, height - 1, true);
@@ -217,7 +221,7 @@ function buildRoom(map: TileMap, roomId: string, roomData: typeof ROOM_DATA[stri
       const x = 2 + Math.floor(Math.random() * (width - 4));
       const y = 2 + Math.floor(Math.random() * (height - 4));
       if (!isNearSpecialLocation(x, y, roomId, spawns)) {
-        map.set(x, y, 13);
+        map.set(x, y, i % 3 === 0 ? 13 : 4);
         map.setCollision(x, y, true);
       }
     }
@@ -242,24 +246,24 @@ const ROOM_DATA = {
     width: 24, height: 18,
     spawns: [
       // NPCs
-      { type: 'player', x: 5, y: 5, tags: ['npc', 'friendly'], dialogue: 'elder',
+      { type: 'npc', x: 5, y: 5, tags: ['npc', 'friendly'], dialogue: 'elder',
         configure: (s: Sprite) => {
-          s.tint = 0x66ff66; s.label = 'Elder'; s.labelColor = 0x66ff66;
+          s.label = 'Elder'; s.labelColor = 0x66ff66;
           s.labelIcon = '!'; s.labelIconColor = 0xffff00;
         } },
-      { type: 'player', x: 12, y: 8, tags: ['npc', 'friendly'], dialogue: 'merchant',
+      { type: 'npc', x: 12, y: 8, tags: ['npc', 'friendly'], dialogue: 'merchant',
         configure: (s: Sprite) => {
-          s.tint = 0x66ff66; s.label = 'Merchant'; s.labelColor = 0x66ff66;
+          s.tint = 0xffd9a0; s.label = 'Merchant'; s.labelColor = 0x66ff66;
         } },
       // Items
-      { type: 'player', x: 8, y: 10, tags: ['item', 'collectible'],
+      { type: 'coin', x: 8, y: 10, tags: ['item', 'collectible'],
         configure: (s: Sprite) => {
-          s.tint = 0xffcc00; s.scale = 0.5; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
+          s.scale = 0.7; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
           s.label = 'Coin'; s.labelColor = 0xffcc00; s.labelVisible = 'proximity'; s.labelRange = 60;
         } },
-      { type: 'player', x: 9, y: 10, tags: ['item', 'collectible'],
+      { type: 'coin', x: 9, y: 10, tags: ['item', 'collectible'],
         configure: (s: Sprite) => {
-          s.tint = 0xffcc00; s.scale = 0.5; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
+          s.scale = 0.7; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
           s.label = 'Coin'; s.labelColor = 0xffcc00; s.labelVisible = 'proximity'; s.labelRange = 60;
         } },
     ],
@@ -268,30 +272,30 @@ const ROOM_DATA = {
     width: 32, height: 24,
     spawns: [
       // Enemies
-      { type: 'player', x: 10, y: 10, tags: ['enemy', 'hostile'], ai: 'chaser',
+      { type: 'slime', x: 10, y: 10, tags: ['enemy', 'hostile'], ai: 'chaser',
         configure: (s: Sprite) => {
-          s.tint = 0xff6666; s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
+          s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
           s.hpBarWidth = 30; s.hpBarVisible = true;
         } },
-      { type: 'player', x: 15, y: 8, tags: ['enemy', 'hostile'], ai: 'chaser',
+      { type: 'slime', x: 15, y: 8, tags: ['enemy', 'hostile'], ai: 'chaser',
         configure: (s: Sprite) => {
-          s.tint = 0xff6666; s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
+          s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
           s.hpBarWidth = 30; s.hpBarVisible = true;
         } },
-      { type: 'player', x: 20, y: 15, tags: ['enemy', 'hostile'], ai: 'chaser',
+      { type: 'slime', x: 20, y: 15, tags: ['enemy', 'hostile'], ai: 'chaser',
         configure: (s: Sprite) => {
-          s.tint = 0xff6666; s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
+          s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
           s.hpBarWidth = 30; s.hpBarVisible = true;
         } },
       // Items
-      { type: 'player', x: 25, y: 12, tags: ['item', 'collectible'],
+      { type: 'coin', x: 25, y: 12, tags: ['item', 'collectible'],
         configure: (s: Sprite) => {
-          s.tint = 0xffcc00; s.scale = 0.5; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
+          s.scale = 0.7; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
           s.label = 'Coin'; s.labelColor = 0xffcc00; s.labelVisible = 'proximity'; s.labelRange = 60;
         } },
-      { type: 'player', x: 28, y: 5, tags: ['item', 'collectible', 'key'],
+      { type: 'key', x: 28, y: 5, tags: ['item', 'collectible', 'key'],
         configure: (s: Sprite) => {
-          s.tint = 0x00ccff; s.scale = 0.5; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
+          s.scale = 0.8; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
           s.label = 'Key'; s.labelColor = 0x00ccff; s.labelVisible = 'proximity'; s.labelRange = 60;
         } },
     ],
@@ -300,40 +304,40 @@ const ROOM_DATA = {
     width: 20, height: 16,
     spawns: [
       // Enemies
-      { type: 'player', x: 8, y: 6, tags: ['enemy', 'hostile'], ai: 'chaser',
+      { type: 'slime', x: 8, y: 6, tags: ['enemy', 'hostile'], ai: 'chaser',
         configure: (s: Sprite) => {
-          s.tint = 0xff6666; s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
+          s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
           s.hpBarWidth = 30; s.hpBarVisible = true;
         } },
-      { type: 'player', x: 12, y: 10, tags: ['enemy', 'hostile'], ai: 'chaser',
+      { type: 'slime', x: 12, y: 10, tags: ['enemy', 'hostile'], ai: 'chaser',
         configure: (s: Sprite) => {
-          s.tint = 0xff6666; s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
+          s.hp = 30; s.label = 'Slime'; s.labelColor = 0xff6666;
           s.hpBarWidth = 30; s.hpBarVisible = true;
         } },
-      { type: 'player', x: 16, y: 8, tags: ['enemy', 'hostile', 'boss'], ai: 'boss_chase',
+      { type: 'slime', x: 16, y: 8, tags: ['enemy', 'hostile', 'boss'], ai: 'boss_chase',
         configure: (s: Sprite) => {
-          s.tint = 0xff00ff; s.scale = 1.5; s.hp = 100; s.label = 'Boss'; s.labelColor = 0xff00ff;
+          s.tint = 0xff9090; s.scale = 1.5; s.hp = 100; s.label = 'Boss'; s.labelColor = 0xff00ff;
           s.hpBarWidth = 50; s.hpBarVisible = true;
         } },
       // Items
-      { type: 'player', x: 5, y: 12, tags: ['item', 'collectible', 'heal'],
+      { type: 'heart', x: 5, y: 12, tags: ['item', 'collectible', 'heal'],
         configure: (s: Sprite) => {
-          s.tint = 0xff6699; s.scale = 0.5; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
+          s.scale = 0.7; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
           s.label = 'Heart'; s.labelColor = 0xff6699; s.labelVisible = 'proximity'; s.labelRange = 60;
         } },
-      { type: 'player', x: 18, y: 14, tags: ['item', 'collectible'],
+      { type: 'coin', x: 18, y: 14, tags: ['item', 'collectible'],
         configure: (s: Sprite) => {
-          s.tint = 0xffcc00; s.scale = 0.5; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
+          s.scale = 0.7; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
           s.label = 'Coin'; s.labelColor = 0xffcc00; s.labelVisible = 'proximity'; s.labelRange = 60;
         } },
-      { type: 'player', x: 17, y: 14, tags: ['item', 'collectible'],
+      { type: 'coin', x: 17, y: 14, tags: ['item', 'collectible'],
         configure: (s: Sprite) => {
-          s.tint = 0xffcc00; s.scale = 0.5; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
+          s.scale = 0.7; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
           s.label = 'Coin'; s.labelColor = 0xffcc00; s.labelVisible = 'proximity'; s.labelRange = 60;
         } },
-      { type: 'player', x: 16, y: 14, tags: ['item', 'collectible'],
+      { type: 'coin', x: 16, y: 14, tags: ['item', 'collectible'],
         configure: (s: Sprite) => {
-          s.tint = 0xffcc00; s.scale = 0.5; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
+          s.scale = 0.7; s.bob = 3; s.bobSpeed = 0.8; s.shadow = true;
           s.label = 'Coin'; s.labelColor = 0xffcc00; s.labelVisible = 'proximity'; s.labelRange = 60;
         } },
     ],
@@ -347,7 +351,7 @@ const ROOM_DATA = {
 // Projectiles — Space to shoot cyan bolts
 game.use(projectiles({
   types: {
-    player_bolt: { speed: 200, cooldown: 0.3, lifetime: 1.0, tint: 0x44ccff, scale: 0.4, fireSound: 'shoot', wallSound: 'wall_hit' },
+    player_bolt: { speed: 200, cooldown: 0.3, lifetime: 1.0, tint: 0x9fe4ff, scale: 0.6, fireSound: 'shoot', wallSound: 'wall_hit' },
   },
 }));
 

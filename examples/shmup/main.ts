@@ -18,7 +18,7 @@ import { Glyft, type GlyftConfig, type Sprite } from '../../src';
 
 const config: GlyftConfig = {
   settings: {
-    tileSize: 8,
+    tileSize: 16,
     viewport: [320, 240],
     spriteMode: '1dir', // No directional animation needed
     backgroundColor: 0x0a0a18,
@@ -109,7 +109,7 @@ const STAR_SIZES = [0.15, 0.2, 0.3];
 // Initialize background stars
 for (let layer = 0; layer < 3; layer++) {
   for (let i = 0; i < STAR_COUNTS[layer]; i++) {
-    const star = game.createSprite(atlas, 'player');
+    const star = game.createSprite(atlas, 'star');
     star.x = Math.random() * SCREEN_W;
     star.y = Math.random() * SCREEN_H;
     star.scale = STAR_SIZES[layer];
@@ -148,10 +148,9 @@ function updateBackground(dt: number, time: number) {
 // Player
 // =============================================================================
 
-const player = game.createSprite(atlas, 'player');
+const player = game.createSprite(atlas, 'ship');
 player.x = SCREEN_W / 2;
 player.y = SCREEN_H - 40;
-player.tint = 0x44ffff;
 player.glow = 0.5;
 player.glowColor = 0x44ffff;
 player.tags = ['player'];
@@ -161,13 +160,13 @@ player.tags = ['player'];
 // =============================================================================
 
 function spawnPlayerBullet(x: number, y: number, vx: number, vy: number) {
-  const bullet = game.createSprite(atlas, 'player');
+  const bullet = game.createSprite(atlas, 'bullet');
   bullet.x = x;
   bullet.y = y;
   bullet.vx = vx;
   bullet.vy = vy;
   bullet.tint = 0x44ffff;
-  bullet.scale = 0.5;
+  bullet.scale = 1;
   bullet.glow = 0.8;
   bullet.glowColor = 0x44ffff;
   bullet.tags = ['player_bullet'];
@@ -176,13 +175,13 @@ function spawnPlayerBullet(x: number, y: number, vx: number, vy: number) {
 }
 
 function spawnEnemyBullet(x: number, y: number, vx: number, vy: number, color = 0xff4444) {
-  const bullet = game.createSprite(atlas, 'player');
+  const bullet = game.createSprite(atlas, 'bullet');
   bullet.x = x;
   bullet.y = y;
   bullet.vx = vx;
   bullet.vy = vy;
   bullet.tint = color;
-  bullet.scale = 0.4;
+  bullet.scale = 0.9;
   bullet.glow = 0.6;
   bullet.glowColor = color;
   bullet.tags = ['enemy_bullet'];
@@ -228,7 +227,7 @@ function fireSpiral(x: number, y: number, baseAngle: number, count: number, spee
 // Enemy data stored in sprite.data
 
 function spawnEnemy(x: number, y: number, type: string) {
-  const enemy = game.createSprite(atlas, 'player');
+  const enemy = game.createSprite(atlas, 'drone');
   enemy.x = x;
   enemy.y = y;
 

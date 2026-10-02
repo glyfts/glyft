@@ -47,6 +47,7 @@ import { createDomTextManager, type DomTextManager } from './domtext';
 import { overlayVertexShader, overlayFragmentShader } from './shaders/overlay';
 import { backgroundVertexShader, backgroundFragmentShader } from './shaders/background';
 import { createWorldSystem, type WorldSystem } from './world3d';
+import { drawStarterAtlas } from './starter-art';
 
 // -----------------------------------------------------------------------------
 // Internal Types
@@ -602,99 +603,26 @@ export class GlyftEngine {
   // ---------------------------------------------------------------------------
 
   /**
-   * Create a procedural test atlas for development.
-   * Generates colored tiles plus an animated character sprite.
+   * Create the built-in starter atlas: real tiles and sprites, no image files.
    *
-   * Layout:
-   * - Rows 0-3: Regular tiles (colored grid)
-   * - Rows 4-7: Player sprite (4 directions x 5 frames)
+   * Tiles (frames tile_0, tile_1, ...): 0 sky, 1 grass, 2 stone wall, 3 bush, 4 tree,
+   * 5 stone floor, 6 dungeon wall, 7 crate, 8 sand, 9 void, 10 water, 11 rock,
+   * 12 dirt path, 13 boulder, 14 lava, 15 planks (higher indices repeat with variation).
+   *
+   * Sprites (4 directions x 5 frames, velocity-animated): player, slime, npc, coin,
+   * key, heart, projectile, bullet, ship, drone, star.
+   *
+   * @example
+   * const atlas = game.createTestAtlas('starter', 16, 16);
+   * game.createMap(atlas, 20, 15).fill(0, 0, 20, 15, 1); // grass
+   * game.createSprite(atlas, 'slime');
    */
   createTestAtlas(name: string, tilesX: number, tilesY: number): Atlas {
     const tileSize = this.config.settings.tileSize;
-    const width = tilesX * tileSize;
-    const height = tilesY * tileSize;
+    const { canvas, frames: spriteFrames } = drawStarterAtlas(tileSize, tilesX, tilesY);
+    const width = canvas.width;
+    const height = canvas.height;
 
-    // Create canvas and draw test pattern
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d')!;
-
-    // Draw colored tiles for tilemap
-    for (let y = 0; y < 4 && y < tilesY; y++) {
-      for (let x = 0; x < tilesX; x++) {
-        const hue = ((x + y * tilesX) * 30) % 360;
-        ctx.fillStyle = `hsl(${hue}, 70%, 50%)`;
-        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-
-        // Border
-        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-        ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
-
-        // Label
-        ctx.fillStyle = 'white';
-        ctx.font = '8px monospace';
-        ctx.fillText(`${x + y * tilesX}`, x * tileSize + 2, y * tileSize + 10);
-      }
-    }
-
-    // Draw animated character sprite (rows 4-7 for 4 directions)
-    // 5 frames: 1 idle + 4 walk
-    // Triangles point in direction of movement and bob during walk
-    const dirAngles = [Math.PI / 2, 0, -Math.PI / 2, Math.PI]; // Down, Right, Up, Left
-    const dirColors = ['#4a90d9', '#5cb85c', '#d9534f', '#f0ad4e']; // Blue, Green, Red, Orange
-
-    for (let dir = 0; dir < 4; dir++) {
-      const rowY = (4 + dir) * tileSize;
-      if (rowY >= height) continue;
-
-      for (let frame = 0; frame < 5; frame++) {
-        const frameX = frame * tileSize;
-        if (frameX >= width) continue;
-
-        // Background
-        ctx.fillStyle = dirColors[dir];
-        ctx.fillRect(frameX, rowY, tileSize, tileSize);
-
-        // Walk animation: bob up/down
-        const isWalking = frame > 0;
-        const bobOffset = isWalking ? Math.sin((frame - 1) * Math.PI / 2) * 2 : 0;
-
-        // Draw body circle
-        const centerX = frameX + tileSize / 2;
-        const centerY = rowY + tileSize / 2 + bobOffset;
-        const bodyRadius = tileSize / 3;
-
-        ctx.fillStyle = '#333';
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, bodyRadius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Draw direction triangle
-        const triangleSize = tileSize / 4;
-        const angle = dirAngles[dir];
-
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        // Triangle pointing in direction
-        ctx.moveTo(
-          centerX + Math.cos(angle) * triangleSize,
-          centerY + Math.sin(angle) * triangleSize
-        );
-        ctx.lineTo(
-          centerX + Math.cos(angle + 2.4) * triangleSize * 0.7,
-          centerY + Math.sin(angle + 2.4) * triangleSize * 0.7
-        );
-        ctx.lineTo(
-          centerX + Math.cos(angle - 2.4) * triangleSize * 0.7,
-          centerY + Math.sin(angle - 2.4) * triangleSize * 0.7
-        );
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-
-    // Create WebGL texture from canvas
     const gl = this.gl;
     const texture = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -726,9 +654,8 @@ export class GlyftEngine {
       }
     }
 
-    // Create player sprite frame (base position for animation)
-    // Points to row 4 (first direction row), the shader handles animation
-    atlas.frames.set('player', { x: 0, y: 4 * tileSize, w: tileSize, h: tileSize });
+    // Sprite frames: player, slime, npc, coin, key, heart, projectile, bullet, ship, drone, star
+    for (const [frameName, frame] of spriteFrames) atlas.frames.set(frameName, frame);
 
     this._atlases.set(name, atlas);
     return this._createAtlasProxy(atlas);

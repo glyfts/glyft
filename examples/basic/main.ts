@@ -67,7 +67,7 @@ const obstacles = [
   [15, 20], [15, 21], [15, 22],
 ];
 for (const [x, y] of obstacles) {
-  map.set(x, y, 3);
+  map.set(x, y, 13); // boulder
   map.setCollision(x, y, true);
 }
 
@@ -80,10 +80,9 @@ player.tags = ['player'];
 // Create some enemy sprites
 const enemies = [];
 for (let i = 0; i < 5; i++) {
-  const enemy = game.createSprite(atlas, 'player');
+  const enemy = game.createSprite(atlas, 'slime');
   enemy.x = (5 + i * 5) * 16;
   enemy.y = (5 + i * 3) * 16;
-  enemy.tint = 0xff6b6b;  // Red tint
   enemy.tags = ['enemy'];
   enemies.push(enemy);
 }
