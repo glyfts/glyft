@@ -13,10 +13,12 @@
  *     chaser: { type: 'chase', speed: 30, range: 150, target: 'player' },
  *     wanderer: { type: 'wander', speed: 20, chance: 0.02 },
  *   },
+ *   // Rules: every sprite with the tag gets the behavior, including ones spawned later
+ *   auto: { enemy: 'chaser', critter: 'wanderer' },
  * }));
  *
- * const aiSys = game.addon<AIAddon>('ai')!;
- * aiSys.assign(enemy, 'chaser');
+ * // Or assign by hand
+ * game.addon<AIAddon>('ai')!.assign(boss, 'chaser');
  * ```
  *
  * @packageDocumentation
@@ -50,6 +52,8 @@ export interface AIBehavior {
 export interface AIConfig {
   /** Named behavior presets */
   behaviors: Record<string, AIBehavior>;
+  /** Tag to behavior rules: sprites with the tag are assigned automatically (checked 4 times a second). */
+  auto?: Record<string, string>;
 }
 
 interface TrackedSprite {
@@ -88,7 +92,9 @@ export function ai(config: AIConfig): AIAddon {
   let game: Glyft;
   const behaviors = new Map<string, AIBehavior>();
   const tracked: TrackedSprite[] = [];
+  const trackedIds = new Set<string>();
   let globalPaused = false;
+  let autoTimer = 0;
 
   return {
     name: 'ai',
@@ -103,9 +109,23 @@ export function ai(config: AIConfig): AIAddon {
     postUpdate(dt: number) {
       if (globalPaused) return;
 
+      // Rule-based assignment: pick up newly tagged sprites
+      if (config.auto) {
+        autoTimer -= dt;
+        if (autoTimer <= 0) {
+          autoTimer = 0.25;
+          for (const [tag, behavior] of Object.entries(config.auto)) {
+            for (const sprite of game.getTagged(tag)) {
+              if (!trackedIds.has(sprite.id)) this.assign(sprite, behavior);
+            }
+          }
+        }
+      }
+
       for (let i = tracked.length - 1; i >= 0; i--) {
         const t = tracked[i];
         if (!t.sprite.exists) {
+          trackedIds.delete(t.sprite.id);
           tracked.splice(i, 1);
           continue;
         }
@@ -153,6 +173,7 @@ export function ai(config: AIConfig): AIAddon {
       const idx = tracked.findIndex(t => t.sprite.id === sprite.id);
       if (idx !== -1) tracked.splice(idx, 1);
 
+      trackedIds.add(sprite.id);
       tracked.push({
         sprite,
         behavior,
@@ -165,6 +186,7 @@ export function ai(config: AIConfig): AIAddon {
     remove(sprite: Sprite) {
       const idx = tracked.findIndex(t => t.sprite.id === sprite.id);
       if (idx !== -1) tracked.splice(idx, 1);
+      trackedIds.delete(sprite.id);
     },
 
     pause(sprite: Sprite) {
@@ -187,6 +209,7 @@ export function ai(config: AIConfig): AIAddon {
 
     destroy() {
       tracked.length = 0;
+      trackedIds.clear();
     },
   };
 

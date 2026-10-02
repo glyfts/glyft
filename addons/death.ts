@@ -17,12 +17,16 @@
  *     resetStats: ['coins', 'keys'],
  *     particles: 'death_burst',
  *     floatText: 'YOU DIED',
+ *     returnToStart: true,
  *   },
+ *   // Rules: tag to death rule, picked up automatically (the 'player' tag is tracked for respawn)
+ *   auto: { enemy: 'enemy' },
  * }));
  *
+ * // Or track by hand
  * const deathSys = game.addon<DeathAddon>('death')!;
  * deathSys.trackPlayer(player);
- * deathSys.track(enemy, 'enemy');
+ * deathSys.track(boss, 'enemy');
  * ```
  *
  * @packageDocumentation
@@ -62,6 +66,8 @@ export interface PlayerRespawn {
   floatTextStyle?: 'rise' | 'pop';
   /** Custom callback on death (e.g., room change) */
   onDeath?: () => void;
+  /** Move the player back to where they were first tracked. @default false */
+  returnToStart?: boolean;
 }
 
 /** Death addon configuration */
@@ -70,6 +76,10 @@ export interface DeathAddonConfig {
   rules?: Record<string, DeathRule>;
   /** Player respawn config */
   playerRespawn?: PlayerRespawn;
+  /** Tag to rule name: sprites with the tag are tracked automatically (checked 4 times a second). */
+  auto?: Record<string, string>;
+  /** Tag that marks the player for playerRespawn when tracked automatically. @default 'player' */
+  playerTag?: string;
 }
 
 interface TrackedEntity {
@@ -95,6 +105,9 @@ export function death(config: DeathAddonConfig): DeathAddon {
   const rules = new Map<string, DeathRule>();
   const tracked: TrackedEntity[] = [];
   let playerSprite: Sprite | null = null;
+  let playerStart: [number, number] = [0, 0];
+  const trackedIds = new Set<string>();
+  let autoTimer = 0;
 
   return {
     name: 'death',
@@ -108,11 +121,27 @@ export function death(config: DeathAddonConfig): DeathAddon {
       }
     },
 
-    postPhysics(_dt: number) {
+    postPhysics(dt: number) {
+      // Rule-based tracking
+      autoTimer -= dt;
+      if (autoTimer <= 0) {
+        autoTimer = 0.25;
+        for (const [tag, rule] of Object.entries(config.auto ?? {})) {
+          for (const sprite of game.getTagged(tag)) {
+            if (!trackedIds.has(sprite.id)) this.track(sprite, rule);
+          }
+        }
+        if (config.playerRespawn && !playerSprite) {
+          const player = game.getTagged(config.playerTag ?? 'player')[0];
+          if (player) this.trackPlayer(player);
+        }
+      }
+
       // Check tracked entities (enemies, etc.)
       for (let i = tracked.length - 1; i >= 0; i--) {
         const t = tracked[i];
         if (!t.sprite.exists) {
+          trackedIds.delete(t.sprite.id);
           tracked.splice(i, 1);
           continue;
         }
@@ -145,6 +174,7 @@ export function death(config: DeathAddonConfig): DeathAddon {
             }
           }
           t.sprite.destroy();
+          trackedIds.delete(t.sprite.id);
           tracked.splice(i, 1);
         }
       }
@@ -171,6 +201,10 @@ export function death(config: DeathAddonConfig): DeathAddon {
 
           // Reset HP
           playerSprite.hp = respawn.hp ?? 100;
+          if (respawn.returnToStart) {
+            playerSprite.x = playerStart[0];
+            playerSprite.y = playerStart[1];
+          }
 
           // Reset stats
           if (respawn.resetStats) {
@@ -188,11 +222,13 @@ export function death(config: DeathAddonConfig): DeathAddon {
     },
 
     track(sprite: Sprite, rule: string) {
+      trackedIds.add(sprite.id);
       tracked.push({ sprite, rule });
     },
 
     trackPlayer(sprite: Sprite) {
       playerSprite = sprite;
+      playerStart = [sprite.x, sprite.y];
     },
 
     untrack(sprite: Sprite) {

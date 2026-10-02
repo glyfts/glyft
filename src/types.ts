@@ -566,10 +566,47 @@ export interface ControllerDef {
   sprint?: number;
   /** Jump height in world units (Space). 0 disables. @default 0 */
   jump?: number;
-  /** What stops movement. 'land' is for boats. @default ['water', 'steep', 'buildings'] */
+  /** What stops the player. Defaults to world.blockedBy. */
   blockedBy?: ('water' | 'steep' | 'buildings' | 'land')[];
   /** Steepest walkable slope as the minimum surface normal Y (1 flat, 0 wall). @default 0.65 */
   maxSlope?: number;
+  /**
+   * Boarding: press `key` near a sprite of one of these types (ships, mounts) to take control of it.
+   * The rider is hidden and carried along; press again near land to step off.
+   * @example { vehicles: ['cutter'], key: 'KeyF', range: 80 }
+   */
+  board?: { vehicles: string[]; key?: string; range?: number };
+}
+
+/**
+ * Where a rule puts things. Named areas are read from the terrain:
+ * - 'land': dry walkable ground
+ * - 'flat': dry, nearly level ground (good for buildings)
+ * - 'hills': high dry ground
+ * - 'shore': water right next to land (boats waiting at the beach)
+ * - 'sea': open water away from land
+ * - [x, y]: an exact ground position in pixels
+ */
+export type WorldArea = 'land' | 'flat' | 'hills' | 'shore' | 'sea' | [number, number];
+
+/** Placement rule shared by world.spawns and world.place. */
+export interface PlacementRule {
+  /** How many to place. @default 1 */
+  count?: number;
+  /** Area to place in. @default 'land' ('sea' for ships) */
+  where?: WorldArea;
+  /** Stay within `radius` of something placed earlier: a sprite type, a building name, or 'center'. */
+  near?: string;
+  /** Radius for `near` in pixels. @default 240 */
+  radius?: number;
+  /** Minimum gap in pixels between this and anything else placed. @default 2 tiles */
+  spacing?: number;
+}
+
+/** Spawn rule: sprites of this type are created at game start. */
+export interface SpawnRule extends PlacementRule {
+  /** Heading in radians, or 'out' to face away from land (boats). @default random for ships, 0 otherwise */
+  facing?: number | 'out';
 }
 
 /** A building part. Faces take material names from the built-in atlas or tile indices of `world.buildingAtlas`. */
@@ -627,12 +664,15 @@ export interface ShipDef {
   turnRate?: number;
 }
 
-/** A static placement in the world. Exactly one of building/model. */
-export interface PlacementDef {
+/**
+ * A static placement in the world. Exactly one of building/model.
+ * Give an exact `at`, or rule fields (where, near, count...) and Glyft finds the spots.
+ */
+export interface PlacementDef extends PlacementRule {
   building?: string;
   model?: string;
-  /** Ground position in pixels [x, y] */
-  at: [number, number];
+  /** Exact ground position in pixels [x, y] */
+  at?: [number, number];
   /** Rotation in radians. @default 0 */
   rotation?: number;
 }
@@ -648,7 +688,15 @@ export interface WorldConfig {
   buildingAtlas?: { src: string; tileSize: number };
   models?: Record<string, ModelDef>;
   ships?: Record<string, ShipDef>;
+  /** Buildings and models, placed in order when the world loads (before spawns). */
   place?: PlacementDef[];
+  /**
+   * Sprites created at game start, keyed by sprite type, placed in order.
+   * @example { hero: { near: 'tower', radius: 120 }, orc: { count: 6, where: 'hills' }, sloop: { where: 'sea' } }
+   */
+  spawns?: Record<string, SpawnRule>;
+  /** What stops every moving sprite (AI, physics). Ships are always stopped by land. @default ['water', 'steep', 'buildings'] */
+  blockedBy?: ('water' | 'steep' | 'buildings' | 'land')[];
   /** World units per sprite pixel for billboards. @default 1 / tileSize */
   spriteScale?: number;
   /** Wind direction in radians (sails, clouds). @default PI/4 */
@@ -684,6 +732,10 @@ export interface World {
   pick(screenX: number, screenY: number): WorldHit | null;
   /** Camera yaw in radians (the direction 'forward' points for controllers). */
   readonly cameraYaw: number;
+  /** Type of the vehicle the player is riding (controller.board), or null on foot. */
+  readonly riding: string | null;
+  /** Find a ground spot matching a rule (null if none). Handy for respawns. */
+  findSpot(rule: PlacementRule): [number, number] | null;
 }
 
 // -----------------------------------------------------------------------------
@@ -1271,7 +1323,8 @@ export interface Glyft {
   /** Register update callback */
   onUpdate(callback: (dt: number) => void): void;
   /** Start game loop */
-  start(): void;
+  /** Start the loop. In 3D, waits for the world and creates world.spawns first. */
+  start(): Promise<void>;
   /** Pause game loop */
   pause(): void;
   /** Resume game loop */

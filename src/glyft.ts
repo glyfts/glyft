@@ -1888,6 +1888,7 @@ export class GlyftEngine {
       for (const [pattern, rule] of Object.entries(rules)) {
         this._collisionRules.set(pattern, rule);
       }
+      this._rebuildCollisions();
     },
     on: (pattern: string, callback: (a: Sprite, b: Sprite) => void) => {
       const callbacks = this._collisionCallbacks.get(pattern) ?? [];
@@ -1895,6 +1896,12 @@ export class GlyftEngine {
       this._collisionCallbacks.set(pattern, callbacks);
     },
   };
+
+  /** Collision rules are parsed once per change, so rules added at runtime take effect. */
+  private _rebuildCollisions(): void {
+    this._collisionSystem = createCollisionSystem(this._collisionRules);
+    this._parseMagnetizeRules();
+  }
 
   // ---------------------------------------------------------------------------
   // Game Loop
@@ -1909,17 +1916,48 @@ export class GlyftEngine {
     this._postRenderCallbacks.push(callback);
   }
 
-  start(): void {
+  /**
+   * Start the game loop. In 3D this waits for the world to load and creates
+   * world.spawns first; the returned promise resolves once the loop is running.
+   */
+  start(): Promise<void> {
     this._running = true;
     this._lastFrameTime = performance.now();
-    if (this._worldLoad && !this._world?.ready) {
-      this._worldLoad.then(() => {
+    if (this._worldLoad) {
+      return this._worldLoad.then(() => {
+        this._spawnWorld();
         this._lastFrameTime = performance.now();
         this._loop();
       });
-      return;
     }
     this._loop();
+    return Promise.resolve();
+  }
+
+  private _worldSpawned = false;
+
+  /** Create the sprites declared in world.spawns (once). */
+  private _spawnWorld(): void {
+    if (this._worldSpawned || !this._world) return;
+    this._worldSpawned = true;
+    const sizeOf = (type: string): number => {
+      const fp = this._world!.footprintOf(type);
+      if (fp) return Math.max(fp[0], fp[1]);
+      for (const atlas of this._atlases.values()) {
+        const f = atlas.frames.get(type);
+        if (f) return Math.max(f.w, f.h);
+      }
+      throw new GlyftError(
+        `world.spawns has '${type}' but no atlas has that sprite type`,
+        `Load it before start(): await game.loadTexture('${type}', '${type}.png', { frameWidth: 32, frameHeight: 32 })`
+      );
+    };
+    for (const plan of this._world.planSpawns(sizeOf)) {
+      const sprite = this.spawn(plan.type, 0, 0);
+      sprite.x = plan.x - sprite.width / 2;
+      sprite.y = plan.y - sprite.height / 2;
+      sprite.rotation = plan.rotation;
+    }
   }
 
   pause(): void {
@@ -1949,7 +1987,7 @@ export class GlyftEngine {
       for (const [pattern, rule] of Object.entries(config.collisions)) {
         this._collisionRules.set(pattern, rule);
       }
-      this._parseMagnetizeRules();
+      this._rebuildCollisions();
     }
     if (config.particles) {
       for (const [name, def] of Object.entries(config.particles)) {
@@ -2709,7 +2747,7 @@ export class GlyftEngine {
         screen.set(s.id, entry);
       }
       const head = world.spriteHeight(s) + s.frameH * pxScale * s.scale;
-      const p = s.exists ? world.project(s.x + s.frameW / 2, s.y + s.frameH / 2, head) : null;
+      const p = s.exists && s.alpha > 0 ? world.project(s.x + s.frameW / 2, s.y + s.frameH / 2, head) : null;
       entry.exists = !!p;
       entry.frameW = s.frameW;
       entry.x = p ? p[0] * sx - s.frameW / 2 : 0;
@@ -2883,6 +2921,7 @@ export class GlyftEngine {
     const instanceData = new Float32Array(sprites.length * FLOATS_PER_INSTANCE);
     let hasShadows = false;
     let hasGlow = false;
+    const flashNow = Date.now();
 
     for (let i = 0; i < sprites.length; i++) {
       const sprite = sprites[i];
@@ -2964,7 +3003,10 @@ export class GlyftEngine {
       instanceData[offset + 10] = sprite.alpha;
 
       // Pack tint as uint32 bits into float (reuse buffer to avoid allocation)
-      this._tintU32[0] = sprite.tint | 0xFF000000;
+      // Collision 'flash' action: tint until the flash ends
+      const flashUntil = sprite.data._flashUntil as number | undefined;
+      const tint = flashUntil !== undefined && flashUntil > flashNow ? (sprite.data._flashColor as number) ?? 0xff0000 : sprite.tint;
+      this._tintU32[0] = tint | 0xFF000000;
       instanceData[offset + 11] = this._tintF32[0];
 
       // a_glow: intensity, color (packed), radius, shadowOffsetY

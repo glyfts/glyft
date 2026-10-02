@@ -207,43 +207,54 @@ collisions: {
 
 ## 3D Worlds
 
-Set `mode: '3d'` and describe the world. Your game logic does not change: sprites keep `x`/`y` in pixels on the ground, `vx`/`vy`, collisions, sounds and stats. Glyft lifts them onto the terrain (one tile = one world unit).
+3D is built the same way as 2D: rules, not code. Set `mode: '3d'` and describe the world. Sprites keep `x`/`y` in pixels on the ground, `vx`/`vy`, collisions, sounds and stats; Glyft lifts them onto the terrain (one tile = one world unit).
 
 ```typescript
 const config: GlyftConfig = {
   settings: { tileSize: 16, viewport: [960, 540], mode: '3d' },
+  autoTags: { hero: ['player'], orc: ['enemy'], coin: ['pickup'] },
+  collisions: {
+    '[player]:[pickup]': { collect: 'coins', destroy: true },
+    '[player]:[enemy]': { damage: 10, knockback: 60, cooldown: 0.8 },
+  },
   world: {
     terrain: {
-      heightmap: { generate: 'island', size: 128, seed: 4 },   // or 'map.png' or number[][]
+      heightmap: { generate: 'island', seed: 4 },          // or 'map.png' or number[][]
       maxHeight: 16,
-      water: { height: 3.2, style: 'ocean', waves: 1 },
+      water: { height: 3.2, style: 'ocean' },
     },
-    sky: { time: 0.3, dayLength: 240 },                          // day/night drives all lighting
-    camera: { mode: 'follow', target: 'hero', distance: 11 },     // follow, orbit, fps, fixed
-    controller: { sprite: 'hero', speed: 90, jump: 2 },           // WASD relative to the camera
+    sky: { time: 0.3, dayLength: 240 },                     // day/night drives all lighting
+    camera: { mode: 'follow', target: 'hero' },             // follow, orbit, fps, fixed
+    controller: { sprite: 'hero', jump: 2, board: { vehicles: ['boat'] } },
     buildings: {
       hut: [
         { type: 'box', position: [0, 0, 0], size: [4, 2.6, 4], faces: { all: 'plaster' } },
         { type: 'roof', position: [0, 2.6, 0], size: [4.6, 1.8, 4.6], faces: { all: 'thatch' } },
       ],
     },
-    ships: { sloop: { preset: 'sloop' } },                        // sprites of type 'sloop' sail
-    place: [{ building: 'hut', at: [960, 1100] }],
+    ships: { boat: { preset: 'cutter' } },
+    place: [{ building: 'hut', count: 4, where: 'flat' }],  // Glyft finds the spots
+    spawns: {
+      hero: { near: 'hut' },
+      boat: { where: 'shore', near: 'hero', facing: 'out' },
+      orc: { count: 6, where: 'hills' },
+      coin: { count: 20 },
+    },
   },
 };
 
 const game = new Glyft(canvas, config);
+game.use(ai({ behaviors: { hunter: { type: 'chase', speed: 45 } }, auto: { enemy: 'hunter' } }));
 await game.loadTexture('hero', 'hero.png', { frameWidth: 32, frameHeight: 32 });
-await game.ready;                       // terrain exists from here
-game.spawn('hero', 60, 68);
-game.spawn('sloop', 60, 90).vx = 70;    // ships turn to face their velocity and ride the waves
-game.start();
+// ...orc, coin
+await game.start();
 ```
 
-- **Types map to looks:** atlas sprites become camera-facing billboards, `world.ships` types become procedural ships, `world.models` types become glTF models.
-- **Zero assets:** terrain, buildings and ships use built-in materials (`sand`, `grass`, `rock`, `snow`, `stone`, `brick`, `plaster`, `wood`, `planks`, `thatch`, `slate`, `door`, `window` and more). Any slot also takes a hex colour or an image URL.
-- **Runtime:** `game.world.time`, `wind`, `waves`, `heightAt(x, y)`, `isWater(x, y)`, `pick(screenX, screenY)`, `place({ building, at })`.
-- Effects, labels and HP bars follow sprites into 3D. Clicks raycast the ground, so `pointerdown` gives ground coordinates.
+- **Places, not coordinates:** `where` takes `'land'`, `'flat'`, `'hills'`, `'shore'`, `'sea'` or an exact `[x, y]`; `near` keeps things close to something placed earlier; `count` and `spacing` do the rest.
+- **Rules for movement:** `world.blockedBy` stops every moving sprite at water, cliffs and buildings; ships are stopped by land. Addons take tag rules too (`ai({ auto })`, `death({ auto, playerRespawn })`).
+- **Types map to looks:** atlas sprites become billboards, `world.ships` types become procedural ships that float and turn to face their velocity, `world.models` types become glTF models.
+- **Zero assets:** built-in materials (`sand`, `grass`, `rock`, `snow`, `stone`, `brick`, `plaster`, `wood`, `planks`, `thatch`, `slate`, `door`, `window` and more). Any slot also takes a hex colour or an image URL.
+- **Runtime:** `game.world.time`, `wind`, `waves`, `riding`, `heightAt(x, y)`, `isWater(x, y)`, `pick(screenX, screenY)`, `findSpot(rule)`, `place(def)`.
 
 ## Examples
 
