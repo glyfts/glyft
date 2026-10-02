@@ -2762,6 +2762,7 @@ export class GlyftEngine {
 
     // Labels and HP bars read sprite positions: feed them screen positions above each head
     const screen = this._labelScreen;
+    const ride = world.ride;
     for (const s of this._sprites.values()) {
       if (s.labelSlot < 0) continue;
       let entry = screen.get(s.id);
@@ -2769,8 +2770,14 @@ export class GlyftEngine {
         entry = { id: s.id, x: 0, y: 0, frameW: 0, exists: true, labelSlot: -1, labelVisible: 'always', labelRange: 0, hpBarVisible: false };
         screen.set(s.id, entry);
       }
-      const head = world.spriteHeight(s) + s.frameH * pxScale * s.scale;
-      const p = s.exists && s.alpha > 0 ? world.project(s.x + s.frameW / 2, s.y + s.frameH / 2, head) : null;
+      // While riding, only the rider's name shows, above whatever is tallest (rider on a mount, the boat)
+      const vehicle = ride && s.id === ride.rider ? this._sprites.get(ride.vehicle) : undefined;
+      const hiddenVehicle = !!ride && s.id === ride.vehicle;
+      let head = world.spriteHeight(s) + s.frameH * pxScale * s.scale;
+      // (a ship's frame is its footprint, which overstates its height, so its label sits a bit lower)
+      if (vehicle) head = Math.max(head, world.spriteHeight(vehicle) + vehicle.frameH * pxScale * vehicle.scale * (vehicle.alpha > 0 && s.alpha === 0 ? 0.55 : 1));
+      const visible = s.exists && !hiddenVehicle && (s.alpha > 0 || !!vehicle);
+      const p = visible ? world.project(s.x + s.frameW / 2, s.y + s.frameH / 2, head) : null;
       entry.exists = !!p;
       entry.frameW = s.frameW;
       entry.x = p ? p[0] * sx - s.frameW / 2 : 0;

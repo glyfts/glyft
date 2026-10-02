@@ -56,6 +56,8 @@ export interface BillboardSprite {
   fps: number;
   /** Flip X */
   flipX: boolean;
+  /** Skip the ground shadow (e.g. a rider sitting on a mount) */
+  noShadow?: boolean;
   /** Vertical bob amplitude in world units (0 = no bob). For floating items. */
   bob: number;
   /** Bob speed multiplier (default ~3). */
@@ -229,6 +231,7 @@ export function createBillboardSystem(gl: WebGL2RenderingContext, spriteMode: '4
         // Pack flags + bob into uint32
         let flags = 0;
         if (s.flipX) flags |= 2;
+        if (s.noShadow) flags |= 4;
         const bobAmp = Math.round(Math.min((s.bob || 0) * 100, 255)) & 0xFF;
         const bobSpd = Math.round(Math.min((s.bobSpeed || 0) * 10, 255)) & 0xFF;
         flags |= (bobAmp << 12) | (bobSpd << 20);

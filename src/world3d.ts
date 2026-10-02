@@ -77,6 +77,8 @@ export interface WorldSystem extends World {
   readonly ready: boolean;
   /** 0..1 black fade for area transitions (the engine draws it) */
   readonly fade: number;
+  /** Who is riding what right now (sprite ids), for labels */
+  readonly ride: { rider: string; vehicle: string } | null;
   /** Footprint in pixels for ship/model sprite types, or null for billboards */
   footprintOf(type: string): [number, number] | null;
   /** Load assets and build GPU resources for every area */
@@ -431,6 +433,7 @@ export function createWorldSystem(
   const world: WorldSystem = {
     get ready() { return ready; },
     get fade() { return fade; },
+    get ride() { return riding ? { rider: riding.rider, vehicle: riding.vehicle } : null; },
 
     get time() { return time; },
     set time(v: number) { time = ((v % 1) + 1) % 1; },
@@ -826,6 +829,11 @@ export function createWorldSystem(
     },
 
     spriteHeight(s) {
+      // A mounted rider sits on the mount: its height (jumps included) plus the seat
+      if (riding?.mounted && s.id === riding.rider && lastSprites) {
+        const v = lastSprites.get(riding.vehicle);
+        if (v) return (groundY.get(v.id) ?? 0) + v.elevation + s.elevation;
+      }
       return (groundY.get(s.id) ?? 0) + s.elevation;
     },
 
@@ -928,7 +936,9 @@ export function createWorldSystem(
         }
         b.x = wx; b.y = y; b.z = wz; b.facing = face;
         b.vx = s.vx * pxScale; b.vz = s.vy * pxScale; b.speed = Math.hypot(b.vx, b.vz);
+        b.noShadow = false;
         if (riding?.mounted && s.id === riding.rider) {
+          b.noShadow = true; // the mount's shadow covers both
           // Sit just in front of the mount (toward the camera) so the two quads never fight
           const cx = cam.position[0] - wx, cz = cam.position[2] - wz, len = Math.hypot(cx, cz) || 1;
           b.x += (cx / len) * 0.12; b.z += (cz / len) * 0.12;

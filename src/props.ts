@@ -73,7 +73,8 @@ class Builder {
       let out = cache.get(key);
       if (!out) {
         const k = 1 + (r() - 0.5) * jitter;
-        const y = flatBottom ? Math.max(p[1], -0.15) : p[1];
+        // Flat bottoms sit just below the ground plane (y = 0), never above it
+        const y = flatBottom ? Math.max(p[1], -cy / ry - 0.12) : p[1];
         out = [cx + p[0] * rx * k, cy + y * ry * k, cz + p[2] * rz * k];
         cache.set(key, out);
       }

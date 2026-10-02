@@ -365,7 +365,13 @@ export function createArea(ctx: AreaContext, key: string, def: AreaDef): Area {
           const spot = area.findSpot({ spacing: tileSize * 0.5, ...rule }, r, 'land');
           if (!spot) break;
           const wx = spot[0] / tileSize, wz = spot[1] / tileSize;
-          propList.push({ kind, x: wx, y: area.terrainHeight(wx, wz) - 0.05, z: wz, rotation: rand() * Math.PI * 2, scale });
+          // Seat the prop at the lowest ground under its footprint so no edge hangs in the air on a slope
+          const fr = Math.max(PROP_INFO[kind].radius, 0.4) * scale;
+          let base = area.terrainHeight(wx, wz);
+          for (let a = 0; a < 6; a++) {
+            base = Math.min(base, area.terrainHeight(wx + Math.cos(a * 1.047) * fr, wz + Math.sin(a * 1.047) * fr));
+          }
+          propList.push({ kind, x: wx, y: base - 0.05, z: wz, rotation: rand() * Math.PI * 2, scale });
           const block = PROP_INFO[kind].radius * scale;
           if (block > 0) {
             const cell = `${Math.floor(wx / 2)},${Math.floor(wz / 2)}`;

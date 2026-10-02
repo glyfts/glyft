@@ -77,6 +77,7 @@ void main() {
   float fps = a_anim.z;
   uint flags = floatBitsToUint(a_anim.w);
   bool flipX = (flags & 2u) != 0u;
+  bool noShadow = (flags & 4u) != 0u;
   float bobAmplitude = float((flags >> 12u) & 0xFFu) * 0.01;
   float bobSpeed = float((flags >> 20u) & 0xFFu) * 0.1;
 
@@ -142,6 +143,8 @@ void main() {
     v_alpha = 0.35;
     v_fogDist = distance(worldPos, u_cameraPos);
     gl_Position = u_viewProj * vec4(shadowPos, 1.0);
+    // Sprites without a shadow (a rider on a mount) collapse it off screen
+    if (noShadow) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   } else {
     // Normal billboard: camera-facing quad, offset down by groundOffset + bob
     float bobOffset = 0.0;
