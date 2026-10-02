@@ -1,6 +1,6 @@
 {
   "name": "glyft",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "GPU-first, config-driven WebGL2 framework for tile-based 2D games",
   "type": "module",
   "main": "dist/src/index.js",
@@ -62,7 +62,8 @@
     "build": "tsc && vite build",
     "build:iife": "vite build --config vite.config.iife.ts",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepare": "tsc"
   },
   "keywords": [
     "webgl",
