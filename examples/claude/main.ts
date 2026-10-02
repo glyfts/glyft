@@ -22,6 +22,7 @@ const config: GlyftConfig = {
     tileSize: 16,
     viewport: [320, 240],
     spriteMode: '4dir',
+    depthSort: 'y',        // lower on screen draws in front
     backgroundColor: 0x0a0a12,
   },
 

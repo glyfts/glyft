@@ -23,6 +23,9 @@ const BYTES_PER_CHAR = FLOATS_PER_CHAR * 4;
 const CHARSET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-.,!?%: /';
 const FONT_SIZE = 16;
 const CHAR_PADDING = 2;
+// Glyphs are drawn at this multiple of their layout size, so text stays sharp when the
+// canvas renders above viewport resolution. Layout and UVs use the logical size.
+const FONT_RES = 4;
 
 // Bit-cast buffer (uint32 ↔ float32)
 const _packBuf = new ArrayBuffer(4);
@@ -96,10 +99,11 @@ export function generateFontAtlas(gl: WebGL2RenderingContext): FontAtlas {
   const atlasW = nextPow2(totalWidth);
   const atlasH = nextPow2(charHeight + 4);
 
-  canvas.width = atlasW;
-  canvas.height = atlasH;
+  canvas.width = atlasW * FONT_RES;
+  canvas.height = atlasH * FONT_RES;
 
-  // Re-set font (canvas resize resets context)
+  // Re-set font (canvas resize resets context); draw in logical units at FONT_RES scale
+  ctx.scale(FONT_RES, FONT_RES);
   ctx.font = font;
   ctx.textBaseline = 'top';
 
@@ -123,11 +127,13 @@ export function generateFontAtlas(gl: WebGL2RenderingContext): FontAtlas {
   const texture = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
+  // Width/height are logical (layout) units; the texture holds FONT_RES times the pixels
   return { texture, width: atlasW, height: atlasH, metrics, charHeight };
 }
 

@@ -213,8 +213,8 @@ export class GlyftEngine {
   private _bgShader: ShaderProgram | null = null;
 
   // Depth sorting
-  private _depthSortCounter = 0;
   private _sortedSpriteCache: InternalSprite[] = [];
+  private _sortedIds = new Set<string>();
 
   // FPS tracking
   private _fpsFrameCount = 0;
@@ -272,6 +272,13 @@ export class GlyftEngine {
 
     this.canvas = canvas;
     this.config = config;
+
+    // A canvas with no CSS size displays at its attribute size, which would grow with the
+    // render scale. Pin it to the viewport so 'auto' pixelRatio has a stable size to fill.
+    if (!canvas.style.width && !canvas.style.height && canvas.clientWidth === canvas.width && canvas.clientHeight === canvas.height) {
+      canvas.style.width = `${config.settings.viewport[0]}px`;
+      canvas.style.height = `${config.settings.viewport[1]}px`;
+    }
 
     // Initialize WebGL
     this.gl = createContext(canvas, { depth: config.settings.depth || config.settings.mode === '3d', alpha: config.settings.alpha });
@@ -389,6 +396,22 @@ export class GlyftEngine {
       this._worldLoad = this._world.load();
       this._worldLoad.catch((err) => console.error('[Glyft] World failed to load:', err));
     }
+  }
+
+  /** Backing pixels per viewport pixel (see settings.pixelRatio). */
+  private _renderScale = 1;
+
+  private _computeRenderScale(): number {
+    const setting = this.config.settings.pixelRatio ?? 'auto';
+    if (typeof setting === 'number') return Math.max(0.25, setting);
+    const [vw, vh] = this.config.settings.viewport;
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+    if (!w || !h) return 1;
+    const dpr = window.devicePixelRatio || 1;
+    const raw = Math.min((w * dpr) / vw, (h * dpr) / vh);
+    // 2D keeps whole-number steps so every sprite pixel is the same size; 3D has no pixel grid
+    const scale = this._world ? raw : Math.floor(raw);
+    return Math.min(8, Math.max(1, scale));
   }
 
   /** Ships and models are sprites too: give them atlas frames sized to their footprint. */
@@ -2047,7 +2070,9 @@ export class GlyftEngine {
 
     // Clear the overlay before anyone draws on it this frame (user callbacks and addons)
     if (this._overlayActive && this._overlayCtx) {
-      this._overlayCtx.clearRect(0, 0, this._overlayCanvas!.width, this._overlayCanvas!.height);
+      this._sizeOverlay();
+      const [vw, vh] = this.config.settings.viewport;
+      this._overlayCtx.clearRect(0, 0, vw, vh);
     }
 
     // Addon: preUpdate (before user callbacks)
@@ -2540,18 +2565,14 @@ export class GlyftEngine {
 
   private _initOverlay(): void {
     const gl = this.gl;
-    const viewport = this.config.settings.viewport;
 
     this._overlayCanvas = document.createElement('canvas');
-    this._overlayCanvas.width = viewport[0];
-    this._overlayCanvas.height = viewport[1];
     this._overlayCtx = this._overlayCanvas.getContext('2d')!;
-
     this._overlayTexture = gl.createTexture()!;
+    this._sizeOverlay();
     gl.bindTexture(gl.TEXTURE_2D, this._overlayTexture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, viewport[0], viewport[1], 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
@@ -2564,6 +2585,24 @@ export class GlyftEngine {
     );
 
     this._overlayActive = true;
+  }
+
+  /**
+   * Match the overlay to the backing resolution. Drawing stays in viewport units
+   * (the context is scaled), so HUD text is as sharp as the screen allows.
+   * Resizing clears the canvas, so this only runs when the size actually changes.
+   */
+  private _sizeOverlay(): void {
+    if (!this._overlayCanvas || !this._overlayCtx) return;
+    const [vw, vh] = this.config.settings.viewport;
+    const w = Math.round(vw * this._renderScale), h = Math.round(vh * this._renderScale);
+    if (this._overlayCanvas.width === w && this._overlayCanvas.height === h) return;
+    this._overlayCanvas.width = w;
+    this._overlayCanvas.height = h;
+    this._overlayCtx.setTransform(w / vw, 0, 0, h / vh, 0, 0);
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this._overlayTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   }
 
   private _renderOverlay(): void {
@@ -2620,8 +2659,9 @@ export class GlyftEngine {
     const gl = this.gl;
     const viewport = this.config.settings.viewport;
 
-    // Resize canvas if needed
-    resizeCanvas(this.canvas, viewport);
+    // Resize canvas if needed (backing store at on-screen resolution)
+    this._renderScale = this._computeRenderScale();
+    resizeCanvas(this.canvas, viewport, this._renderScale);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 
     if (this._world) {
@@ -2799,31 +2839,38 @@ export class GlyftEngine {
 
     const gl = this.gl;
     const depthSort = this.config.settings.depthSort ?? 'none';
-    const depthSortInterval = this.config.settings.depthSortInterval ?? 5;
 
-    // Collect live sprites
-    this._sortedSpriteCache.length = 0;
-    for (const sprite of this._sprites.values()) {
-      if (!sprite.exists) continue;
-      this._sortedSpriteCache.push(sprite);
+    // Keep last frame's order: drop dead sprites, append new ones, then fix the order.
+    // Insertion sort on a nearly sorted list is close to O(n), so sorting every frame is cheap
+    // and nothing flickers back to creation order between sorts.
+    const cache = this._sortedSpriteCache;
+    let w = 0;
+    for (let i = 0; i < cache.length; i++) {
+      if (cache[i].exists && this._sprites.get(cache[i].id) === cache[i]) cache[w++] = cache[i];
+      else this._sortedIds.delete(cache[i].id);
+    }
+    cache.length = w;
+    if (cache.length !== this._sprites.size) {
+      for (const sprite of this._sprites.values()) {
+        if (sprite.exists && !this._sortedIds.has(sprite.id)) {
+          cache.push(sprite);
+          this._sortedIds.add(sprite.id);
+        }
+      }
     }
 
-    // Depth sort (throttled)
     if (depthSort !== 'none') {
-      this._depthSortCounter++;
-      if (this._depthSortCounter >= depthSortInterval) {
-        this._depthSortCounter = 0;
-        if (depthSort === 'y') {
-          this._sortedSpriteCache.sort((a, b) => (a.y + a.frameH) - (b.y + b.frameH));
-        } else if (depthSort === 'z') {
-          this._sortedSpriteCache.sort((a, b) => a.z - b.z);
-        } else if (depthSort === 'zy') {
-          // Sort by z first, then by y within same z-layer
-          this._sortedSpriteCache.sort((a, b) => {
-            if (a.z !== b.z) return a.z - b.z;
-            return (a.y + a.frameH) - (b.y + b.frameH);
-          });
-        }
+      const key = depthSort === 'z'
+        ? (s: InternalSprite) => s.z
+        : depthSort === 'zy'
+          ? (s: InternalSprite) => s.z * 1e7 + s.y + s.frameH
+          : (s: InternalSprite) => s.y + s.frameH;
+      for (let i = 1; i < cache.length; i++) {
+        const item = cache[i];
+        const k = key(item);
+        let j = i - 1;
+        while (j >= 0 && key(cache[j]) > k) { cache[j + 1] = cache[j]; j--; }
+        cache[j + 1] = item;
       }
     }
 

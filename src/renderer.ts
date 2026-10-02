@@ -388,9 +388,9 @@ export function createVAO(gl: WebGL2RenderingContext): WebGLVertexArrayObject {
  * Set canvas size to virtual viewport (pixel-perfect).
  * CSS handles scaling - canvas stays at exact viewport size.
  */
-export function resizeCanvas(canvas: HTMLCanvasElement, viewport: [number, number]): boolean {
-  const width = viewport[0];
-  const height = viewport[1];
+export function resizeCanvas(canvas: HTMLCanvasElement, viewport: [number, number], scale = 1): boolean {
+  const width = Math.round(viewport[0] * scale);
+  const height = Math.round(viewport[1] * scale);
 
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;

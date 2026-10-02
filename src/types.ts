@@ -95,8 +95,9 @@ export interface GlyftSettings {
   backgroundColor?: number;
 
   /**
-   * Depth sorting mode for sprites.
-   * - `'y'` - Sort by Y position (lower = in front). Good for top-down RPGs.
+   * Depth sorting mode for sprites (2D). Sorted every frame; the order carries over
+   * between frames, so the cost is close to linear when little moves.
+   * - `'y'` - Sort by the bottom edge (y + height): lower on screen draws in front. Use for top-down games.
    * - `'z'` - Sort by Z layer (lower = behind). Good for layered 2D games.
    * - `'zy'` - Sort by Z first, then Y within same layer. Best of both.
    * - `'none'` - No sorting, render in creation order.
@@ -105,10 +106,8 @@ export interface GlyftSettings {
   depthSort?: 'y' | 'z' | 'zy' | 'none';
 
   /**
-   * How often to perform depth sorting (every N frames).
-   * Higher values reduce CPU cost but may cause brief visual glitches.
-   * Only applies when depthSort is not 'none'.
-   * @default 5
+   * @deprecated Ignored. Sorting now runs every frame and is cheap because the order
+   * carries over between frames.
    */
   depthSortInterval?: number;
 
@@ -126,6 +125,15 @@ export interface GlyftSettings {
    * @default false
    */
   alpha?: boolean;
+
+  /**
+   * Backing resolution relative to the viewport. 'auto' renders at the canvas's on-screen size
+   * times the device pixel ratio, so text and HUDs stay sharp when a small viewport is shown
+   * large. 2D uses whole-number steps so pixel art stays square. 1 renders at viewport size
+   * and lets the browser scale it (the old behaviour).
+   * @default 'auto'
+   */
+  pixelRatio?: number | 'auto';
 
   /**
    * Rendering mode. In '3d', sprites keep their 2D logic (x/y in pixels on the
