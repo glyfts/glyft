@@ -375,6 +375,16 @@ export class GlyftEngine {
       const bbMode = mode === '8dir' ? '8dir' : mode === '1dir' ? '1dir' : '4dir';
       this._world = createWorldSystem(this.gl, canvas, config.world ?? {}, config.settings.tileSize, bbMode);
       this._registerWorldAtlas();
+      this._world.setHooks({
+        spawn: (type, cx, cy) => {
+          const sprite = this.spawn(type, 0, 0);
+          sprite.physics = false; // placed by the world each frame, never blocked
+          sprite.x = cx - sprite.width / 2;
+          sprite.y = cy - sprite.height / 2;
+          return sprite.id;
+        },
+        destroy: (id) => this.getById(id)?.destroy(),
+      });
       this._worldLoad = this._world.load();
       this._worldLoad.catch((err) => console.error('[Glyft] World failed to load:', err));
     }
@@ -383,7 +393,12 @@ export class GlyftEngine {
   /** Ships and models are sprites too: give them atlas frames sized to their footprint. */
   private _registerWorldAtlas(): void {
     const world = this._world!;
-    const types = [...Object.keys(this.config.world?.ships ?? {}), ...Object.keys(this.config.world?.models ?? {})];
+    const attack = this.config.world?.controller?.attack?.spawn;
+    const types = [
+      ...Object.keys(this.config.world?.ships ?? {}),
+      ...Object.keys(this.config.world?.models ?? {}),
+      ...(attack ? [attack] : []),
+    ];
     if (types.length === 0) return;
     const texture = this.gl.createTexture()!;
     this.gl.bindTexture(this.gl.TEXTURE_2D, texture);
@@ -1936,6 +1951,24 @@ export class GlyftEngine {
 
   private _worldSpawned = false;
 
+  /** Apply a spawn rule's `with` block: data is merged, everything else is set. */
+  private _applySpriteProps(sprite: Sprite, props: Record<string, unknown>): void {
+    for (const [key, value] of Object.entries(props)) {
+      if (key === 'data') {
+        Object.assign(sprite.data, value as Record<string, unknown>);
+        continue;
+      }
+      try {
+        (sprite as unknown as Record<string, unknown>)[key] = value;
+      } catch {
+        throw new GlyftError(
+          `Spawn rule for '${sprite.type}' sets '${key}', which is read-only`,
+          `Remove '${key}' from the rule's with block. Settable examples: label, tint, scale, alpha, hpBarVisible, visualOffsetY, walkFrames, data.`
+        );
+      }
+    }
+  }
+
   /** Create the sprites declared in world.spawns (once). */
   private _spawnWorld(): void {
     if (this._worldSpawned || !this._world) return;
@@ -1957,6 +1990,7 @@ export class GlyftEngine {
       sprite.x = plan.x - sprite.width / 2;
       sprite.y = plan.y - sprite.height / 2;
       sprite.rotation = plan.rotation;
+      if (plan.with) this._applySpriteProps(sprite, plan.with);
     }
   }
 

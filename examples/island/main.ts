@@ -3,8 +3,8 @@
  *
  * A 3D game written the 2D way: rules, not code. The config declares the
  * island, the village, who spawns where, what blocks what, how enemies
- * behave, what collisions do, and how you board the boat. The only code is
- * loading three images and drawing the HUD.
+ * behave, what a sword swing does, and how you board the boat. The only code
+ * is loading three images and drawing the HUD.
  */
 
 import { Glyft, type GlyftConfig } from '../../src';
@@ -14,18 +14,23 @@ const config: GlyftConfig = {
   settings: { tileSize: 16, viewport: [960, 540], mode: '3d', spriteMode: '4dir' },
 
   autoTags: { hero: ['player'], orc: ['enemy'], coin: ['pickup'], sloop: ['ship'] },
-  stats: { coins: { default: 0 } },
+  stats: { hp: { default: 100, max: 100 }, coins: { default: 0 } },
 
   sounds: {
     '[player]:[pickup]': '$coin',
     '[player]:[enemy]': { sound: '$hurt', cooldown: 0.6 },
+    '[enemy]:slash': '$hit',
   },
   collisions: {
     '[player]:[pickup]': { collect: 'coins', destroy: true, floatText: true, particles: 'sparkle' },
     '[player]:[enemy]': { damage: 10, knockback: 60, flash: 0.2, cooldown: 0.8, floatText: true },
+    // The hero's sword swing (controller.attack) is a sprite too, so hitting is just a rule
+    '[enemy]:slash': { damage: 25, knockback: 90, flash: 0.15, cooldown: 0.3, floatText: true, particles: 'hit' },
   },
   particles: {
     sparkle: { count: 14, speed: 60, lifetime: 0.5, color: 0xffe066, colorEnd: 0xff9900, size: 3, sizeEnd: 0 },
+    hit: { count: 10, speed: 80, lifetime: 0.3, color: 0xffffff, colorEnd: 0xff4444, size: 3, sizeEnd: 0 },
+    poof: { count: 24, speed: 50, lifetime: 0.7, color: 0x88aa66, colorEnd: 0x334422, size: 4, sizeEnd: 0 },
   },
 
   world: {
@@ -40,6 +45,7 @@ const config: GlyftConfig = {
     controller: {
       sprite: 'hero', speed: 90, jump: 2,
       board: { vehicles: ['cutter'], key: 'KeyF', range: 64 },
+      attack: { spawn: 'slash', frames: [4, 1], cooldown: 0.35 }, // click to swing; column 4 is the sword frame
     },
 
     buildings: {
@@ -68,12 +74,13 @@ const config: GlyftConfig = {
     ],
 
     // Who appears where (in order, so later rules can be near earlier ones)
+    // The art has empty pixels under the feet (visualOffsetY) and a sword frame after the walk cycle
     spawns: {
-      hero: { near: 'tower', radius: 140 },
-      cutter: { where: 'shore', near: 'hero', radius: 600, facing: 'out' },
+      hero: { near: 'tower', radius: 140, with: { label: 'You', visualOffsetY: 9, walkFrames: 3 } },
+      cutter: { where: 'shore', near: 'hero', radius: 400, facing: 'out', with: { label: 'Boat' } },
       sloop: { where: 'sea' },
-      orc: { count: 6, where: 'hills' },
-      coin: { count: 20, spacing: 64 },
+      orc: { count: 6, where: 'hills', with: { visualOffsetY: 9, walkFrames: 3, hpBarVisible: true, data: { maxHp: 100 } } },
+      coin: { count: 20, spacing: 64, with: { walkFrames: 0, bob: 4 } },
     },
   },
 };
@@ -90,6 +97,8 @@ game.use(ai({
   auto: { enemy: 'hunter', ship: 'cruise' },
 }));
 game.use(death({
+  rules: { orc: { particles: 'poof', floatText: 'Defeated' } },
+  auto: { enemy: 'orc' },
   playerRespawn: { hp: 100, floatText: 'Ouch', returnToStart: true },
 }));
 
@@ -100,14 +109,6 @@ await Promise.all([
 ]);
 
 await game.start();
-
-// The art has empty pixels under the feet; coins don't walk
-for (const s of [...game.getTagged('player'), ...game.getTagged('enemy')]) s.visualOffsetY = 9;
-for (const coin of game.getTagged('pickup')) {
-  coin.walkFrames = 0;
-  coin.bob = 4;
-}
-for (const orc of game.getTagged('enemy')) orc.hpBarVisible = true;
 
 // ---- HUD ----
 
@@ -123,6 +124,12 @@ game.onUpdate(() => {
   ctx.font = '14px system-ui, sans-serif';
   ctx.fillText(`HP ${hero.hp ?? 100}   Coins ${game.stats.coins}/20`, 18, 30);
   ctx.fillText(`${String(hour).padStart(2, '0')}:00  ${world.riding ? 'Sailing (F near land to step off)' : 'On foot'}`, 18, 52);
+  if (world.boardable) {
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Press F to board', 480, 470);
+    ctx.textAlign = 'left';
+  }
 });
 
 // Handy for poking at the world from the browser console

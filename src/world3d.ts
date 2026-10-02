@@ -56,6 +56,12 @@ export interface WorldSprite {
   atlas: { name: string; texture: WebGLTexture; width: number; height: number };
 }
 
+export interface WorldHooks {
+  /** Create a sprite of this type centred on a ground position; returns its id */
+  spawn(type: string, cx: number, cy: number): string | null;
+  destroy(id: string): void;
+}
+
 export interface WorldInput {
   isDown(key: string): boolean;
   justPressed(key: string): boolean;
@@ -68,7 +74,9 @@ export interface WorldSystem extends World {
   /** Load assets and build GPU resources */
   load(): Promise<void>;
   /** Resolve world.spawns into positions. sizeOf gives a type's footprint in pixels. */
-  planSpawns(sizeOf: (type: string) => number): { type: string; x: number; y: number; rotation: number }[];
+  planSpawns(sizeOf: (type: string) => number): { type: string; x: number; y: number; rotation: number; with?: Record<string, unknown> }[];
+  /** How the world creates and removes sprites (attack hitboxes). Set by the engine. */
+  setHooks(hooks: WorldHooks): void;
   /** Before physics: controller input */
   prePhysics(dt: number, sprites: Map<string, WorldSprite>, input: WorldInput): void;
   /** After physics: blocking, ground height, jumps, buoyancy, ship headings */
@@ -186,7 +194,7 @@ export function createWorldSystem(
         const base = Math.max(sea, 0);
         return !wet && ny >= maxSlope && h > base + ((terrainDef?.maxHeight ?? 16) - base) * 0.3;
       }
-      case 'shore': return wet && sea - h > 0.4 && landWithin(wx, wz, 6);
+      case 'shore': return wet && sea - h > 0.4 && landWithin(wx, wz, 3);
       case 'sea': return wet && sea - h > 1.5 && !landWithin(wx, wz, 8);
     }
     return false;
@@ -426,6 +434,81 @@ export function createWorldSystem(
 
   let lastSprites: Map<string, WorldSprite> | null = null;
 
+  // ---- Attack (controller.attack) ----
+  const attack = ctrl?.attack;
+  let hooks: WorldHooks | null = null;
+  let attackCooldown = 0;
+  const hitboxes: { id: string; owner: string; until: number }[] = [];
+  const attackAnims = new Map<string, number>(); // sprite id -> start time (seconds)
+  let boardable: string | null = null;
+
+  // A click is a press and release without dragging the camera
+  let clicked = false;
+  let downX = 0, downY = 0;
+  const onDown = (e: PointerEvent) => { if (e.button === 0) { downX = e.clientX; downY = e.clientY; } };
+  const onUp = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    if (document.pointerLockElement === canvas || Math.hypot(e.clientX - downX, e.clientY - downY) < 5) clicked = true;
+  };
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointerup', onUp);
+
+  function nearestVehicle(sprites: Map<string, WorldSprite>): WorldSprite | null {
+    const rider = ctrl ? findSprite(sprites, ctrl.sprite) : null;
+    if (!board || !rider || riding) return null;
+    const range = board.range ?? 64;
+    const rx = rider.x + rider.frameW / 2, ry = rider.y + rider.frameH / 2;
+    let best: WorldSprite | null = null, bestD = Infinity;
+    for (const s of sprites.values()) {
+      if (!s.exists || !board.vehicles.includes(s.type)) continue;
+      const d = Math.hypot(s.x + s.frameW / 2 - rx, s.y + s.frameH / 2 - ry) - Math.max(s.frameW, s.frameH) / 2;
+      if (d < range && d < bestD) { best = s; bestD = d; }
+    }
+    return best;
+  }
+
+  function updateAttack(dt: number, sprites: Map<string, WorldSprite>, input: WorldInput): void {
+    const now = performance.now() / 1000;
+    // Hitboxes ride along in front of their owner, then vanish
+    for (let i = hitboxes.length - 1; i >= 0; i--) {
+      const h = hitboxes[i];
+      const hb = sprites.get(h.id), owner = sprites.get(h.owner);
+      if (!hb || !hb.exists || !owner || now > h.until) {
+        hooks?.destroy(h.id);
+        hitboxes.splice(i, 1);
+        continue;
+      }
+      placeHitbox(hb, owner);
+    }
+    for (const [id, t0] of attackAnims) {
+      const frames = attack?.frames?.[1] ?? 1;
+      if (now - t0 > frames / (attack?.fps ?? 12)) attackAnims.delete(id);
+    }
+
+    attackCooldown -= dt;
+    const pressed = (attack?.key ?? 'Click') === 'Click' ? clicked : input.justPressed(attack!.key!);
+    clicked = false;
+    if (!attack || !hooks || riding || !pressed || attackCooldown > 0) return;
+    const attacker = ctrl ? findSprite(sprites, ctrl.sprite) : null;
+    if (!attacker) return;
+    attackCooldown = attack.cooldown ?? 0.4;
+    if (attack.frames) attackAnims.set(attacker.id, now);
+    const id = hooks.spawn(attack.spawn, 0, 0);
+    if (!id) return;
+    const hb = sprites.get(id);
+    if (hb) placeHitbox(hb, attacker);
+    hitboxes.push({ id, owner: attacker.id, until: now + (attack.duration ?? 0.15) });
+  }
+
+  function placeHitbox(hb: WorldSprite, owner: WorldSprite): void {
+    const f = facing.get(owner.id) ?? 0;
+    const reach = attack?.reach ?? 20;
+    const cx = owner.x + owner.frameW / 2 + Math.sin(f) * reach;
+    const cy = owner.y + owner.frameH / 2 + Math.cos(f) * reach;
+    hb.x = cx - hb.frameW / 2;
+    hb.y = cy - hb.frameH / 2;
+  }
+
   // ---- World API ----
 
   const world: WorldSystem = {
@@ -446,12 +529,16 @@ export function createWorldSystem(
       return riding ? (lastSprites?.get(riding.vehicle)?.type ?? null) : null;
     },
 
+    get boardable() { return boardable; },
+
+    setHooks(h) { hooks = h; },
+
     findSpot(rule) {
       return findSpot(rule, tileSize, 'land');
     },
 
     planSpawns(sizeOf) {
-      const out: { type: string; x: number; y: number; rotation: number }[] = [];
+      const out: { type: string; x: number; y: number; rotation: number; with?: Record<string, unknown> }[] = [];
       for (const [type, rule] of Object.entries(config.spawns ?? {})) {
         const isShip = shipTypes.has(type);
         const r = sizeOf(type) / 2;
@@ -465,7 +552,7 @@ export function createWorldSystem(
           const rotation = typeof rule.facing === 'number' ? rule.facing
             : rule.facing === 'out' ? headingOut(spot[0], spot[1])
             : isShip ? rand() * Math.PI * 2 : 0;
-          out.push({ type, x: spot[0], y: spot[1], rotation });
+          out.push({ type, x: spot[0], y: spot[1], rotation, with: rule.with as Record<string, unknown> | undefined });
           occupied.push({ x: spot[0], y: spot[1], r, name: type });
         }
       }
@@ -537,6 +624,7 @@ export function createWorldSystem(
       }
       const model = modelTypes.get(type);
       if (model) return model.footprint ?? [tileSize, tileSize];
+      if (attack && type === attack.spawn) return [attack.size ?? 28, attack.size ?? 28];
       return null;
     },
 
@@ -659,6 +747,8 @@ export function createWorldSystem(
       if (!ctrl || !ready) return;
 
       if (board && input.justPressed(board.key ?? 'KeyF')) toggleBoard(sprites);
+      boardable = nearestVehicle(sprites)?.type ?? null;
+      updateAttack(dt, sprites, input);
 
       const s = driven(sprites);
       if (!s) return;
@@ -863,6 +953,7 @@ export function createWorldSystem(
 
       for (const s of sprites.values()) {
         if (!s.exists || s === hideForFps || (riding && s.id === riding.rider)) continue;
+        if (attack && s.type === attack.spawn) continue; // hitboxes are invisible
         const [wx, wz] = footOf(s);
         const y = world.spriteHeight(s);
         const face = facing.get(s.id) ?? 0;
@@ -906,7 +997,13 @@ export function createWorldSystem(
           b.terrainNormalX = n[0]; b.terrainNormalZ = n[2];
         }
         const anim = s.animOverride ? s.animations.get(s.animOverride) : null;
-        if (anim && anim.frames.length > 0) {
+        const attackStart = attackAnims.get(s.id);
+        if (attackStart !== undefined && attack?.frames) {
+          b.animOverrideStart = attack.frames[0];
+          b.animOverrideFrames = attack.frames[1];
+          b.animOverrideFps = attack.fps ?? 12;
+          b.animOverrideTime = attackStart;
+        } else if (anim && anim.frames.length > 0) {
           b.animOverrideStart = anim.frames[0];
           b.animOverrideFrames = anim.frames.length;
           b.animOverrideFps = anim.fps;
@@ -952,6 +1049,8 @@ export function createWorldSystem(
     },
 
     destroy() {
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointerup', onUp);
       rig.destroy();
       terrain?.destroy();
       sky?.destroy();

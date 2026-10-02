@@ -216,6 +216,7 @@ const config: GlyftConfig = {
   collisions: {
     '[player]:[pickup]': { collect: 'coins', destroy: true },
     '[player]:[enemy]': { damage: 10, knockback: 60, cooldown: 0.8 },
+    '[enemy]:slash': { damage: 25, knockback: 90 },
   },
   world: {
     terrain: {
@@ -225,7 +226,7 @@ const config: GlyftConfig = {
     },
     sky: { time: 0.3, dayLength: 240 },                     // day/night drives all lighting
     camera: { mode: 'follow', target: 'hero' },             // follow, orbit, fps, fixed
-    controller: { sprite: 'hero', jump: 2, board: { vehicles: ['boat'] } },
+    controller: { sprite: 'hero', jump: 2, board: { vehicles: ['boat'] }, attack: { spawn: 'slash' } },
     buildings: {
       hut: [
         { type: 'box', position: [0, 0, 0], size: [4, 2.6, 4], faces: { all: 'plaster' } },
@@ -235,7 +236,7 @@ const config: GlyftConfig = {
     ships: { boat: { preset: 'cutter' } },
     place: [{ building: 'hut', count: 4, where: 'flat' }],  // Glyft finds the spots
     spawns: {
-      hero: { near: 'hut' },
+      hero: { near: 'hut', with: { label: 'You' } },
       boat: { where: 'shore', near: 'hero', facing: 'out' },
       orc: { count: 6, where: 'hills' },
       coin: { count: 20 },
@@ -251,10 +252,11 @@ await game.start();
 ```
 
 - **Places, not coordinates:** `where` takes `'land'`, `'flat'`, `'hills'`, `'shore'`, `'sea'` or an exact `[x, y]`; `near` keeps things close to something placed earlier; `count` and `spacing` do the rest.
+- **Fighting is a rule too:** `controller.attack: { spawn: 'slash', frames: [4, 1] }` puts a hitbox sprite in front of the player on click, and `'[enemy]:slash': { damage: 25 }` decides what it does.
 - **Rules for movement:** `world.blockedBy` stops every moving sprite at water, cliffs and buildings; ships are stopped by land. Addons take tag rules too (`ai({ auto })`, `death({ auto, playerRespawn })`).
 - **Types map to looks:** atlas sprites become billboards, `world.ships` types become procedural ships that float and turn to face their velocity, `world.models` types become glTF models.
 - **Zero assets:** built-in materials (`sand`, `grass`, `rock`, `snow`, `stone`, `brick`, `plaster`, `wood`, `planks`, `thatch`, `slate`, `door`, `window` and more). Any slot also takes a hex colour or an image URL.
-- **Runtime:** `game.world.time`, `wind`, `waves`, `riding`, `heightAt(x, y)`, `isWater(x, y)`, `pick(screenX, screenY)`, `findSpot(rule)`, `place(def)`.
+- **Runtime:** `game.world.time`, `wind`, `waves`, `riding`, `boardable`, `heightAt(x, y)`, `isWater(x, y)`, `pick(screenX, screenY)`, `findSpot(rule)`, `place(def)`.
 
 ## Examples
 

@@ -576,6 +576,33 @@ export interface ControllerDef {
    * @example { vehicles: ['cutter'], key: 'KeyF', range: 80 }
    */
   board?: { vehicles: string[]; key?: string; range?: number };
+  /**
+   * Attacking: on click (or `key`) the player plays its attack frames and a short-lived,
+   * invisible hitbox sprite of type `spawn` appears in front of it. What a hit does is a
+   * collision rule, like any other: '[enemy]:slash': { damage: 25, knockback: 90 }.
+   * @example { spawn: 'slash', frames: [4, 1] }
+   */
+  attack?: AttackDef;
+}
+
+/** Melee attack for the controlled sprite. */
+export interface AttackDef {
+  /** Hitbox sprite type (no art needed). Write collision rules against it. */
+  spawn: string;
+  /** 'Click' (left click without dragging) or a KeyboardEvent.code. @default 'Click' */
+  key?: string;
+  /** Distance in pixels from the attacker's centre to the hitbox centre. @default 20 */
+  reach?: number;
+  /** Hitbox size in pixels. @default 28 */
+  size?: number;
+  /** Seconds the hitbox exists. @default 0.15 */
+  duration?: number;
+  /** Seconds between attacks. @default 0.4 */
+  cooldown?: number;
+  /** Attack animation in the attacker's sheet: [first column, frame count] */
+  frames?: [number, number];
+  /** Attack animation speed. @default 12 */
+  fps?: number;
 }
 
 /**
@@ -607,6 +634,11 @@ export interface PlacementRule {
 export interface SpawnRule extends PlacementRule {
   /** Heading in radians, or 'out' to face away from land (boats). @default random for ships, 0 otherwise */
   facing?: number | 'out';
+  /**
+   * Sprite properties applied to every sprite this rule creates.
+   * @example { label: 'Boat', hpBarVisible: true, visualOffsetY: 9 }
+   */
+  with?: { [K in keyof Sprite]?: Sprite[K] };
 }
 
 /** A building part. Faces take material names from the built-in atlas or tile indices of `world.buildingAtlas`. */
@@ -734,6 +766,8 @@ export interface World {
   readonly cameraYaw: number;
   /** Type of the vehicle the player is riding (controller.board), or null on foot. */
   readonly riding: string | null;
+  /** Type of the vehicle close enough to board right now, or null. Use it for a "Press F" prompt. */
+  readonly boardable: string | null;
   /** Find a ground spot matching a rule (null if none). Handy for respawns. */
   findSpot(rule: PlacementRule): [number, number] | null;
 }
