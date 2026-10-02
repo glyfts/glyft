@@ -194,6 +194,7 @@ function drawMinimap(ctx: CanvasRenderingContext2D, game: Glyft, hero: Sprite, m
   for (const c of game.getTagged('pickup')) dot(c.x + c.width / 2, c.y + c.height / 2, 1.8, '#ffd23f');
   for (const e of game.getTagged('enemy')) dot(e.x + e.width / 2, e.y + e.height / 2, 2.6, '#ff4d5e');
   for (const s of game.getTagged('ship')) dot(s.x + s.width / 2, s.y + s.height / 2, 3, '#ffffff');
+  for (const s of game.getTagged('mount')) dot(s.x + s.width / 2, s.y + s.height / 2, 3, '#c98a50');
   for (const e of world.exits) {
     const [mx, my] = toMap(e.x, e.y);
     ctx.save(); ctx.translate(mx, my); ctx.rotate(Math.PI / 4);
@@ -260,7 +261,9 @@ function drawBanner(ctx: CanvasRenderingContext2D, text: string, t: number): voi
 
 function promptText(game: Glyft, hero: Sprite, labels: Map<string, string>): [string, string] | null {
   const world = game.world!;
+  if (world.riding === 'horse') return ['F', 'Dismount'];
   if (world.riding) return ['F', 'Step off near land  ·  W/S sail  ·  A/D steer'];
+  if (world.boardable === 'horse') return ['F', 'Ride the horse'];
   if (world.boardable) return ['F', 'Board the boat'];
   const px = hero.x + hero.width / 2, py = hero.y + hero.height / 2;
   for (const e of world.exits) {

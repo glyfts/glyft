@@ -233,6 +233,8 @@ export function createWorldSystem(
         for (let a = 0; a < 16; a++) {
           const x = cx + Math.cos((a / 16) * Math.PI * 2) * d, y = cy + Math.sin((a / 16) * Math.PI * 2) * d;
           if (!cur.inArea(x, y, 'land')) continue;
+          // Never step off into a doorway: that would carry you away and leave the mount behind
+          if (cur.exits.some((e) => Math.hypot(e.x - x, e.y - y) < e.trigger + 8)) continue;
           rider.x = x - rider.frameW / 2;
           rider.y = y - rider.frameH / 2;
           rider.tags.push(...riding.tags);
@@ -253,7 +255,7 @@ export function createWorldSystem(
     // Out of play while riding: no tags means no collision rules match the rider
     const mounted = !shipTypes.has(best.type);
     riding = { rider: rider.id, vehicle: best.id, tags: rider.tags.splice(0), alpha: rider.alpha, mounted, elevation: rider.elevation };
-    if (mounted) rider.elevation = board!.seat ?? best.frameH * pxScale * 0.45;
+    if (mounted) rider.elevation = board!.seat ?? best.frameH * pxScale * best.scale * 0.45;
     else rider.alpha = 0;
     rider.physics = false;
     rider.vx = 0; rider.vy = 0;

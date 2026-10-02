@@ -47,7 +47,7 @@ const stairs: BuildingDef = {
 const config: GlyftConfig = {
   settings: { tileSize: 16, viewport: [960, 540], mode: '3d', spriteMode: '4dir' },
 
-  autoTags: { hero: ['player'], orc: ['enemy'], slime: ['enemy'], coin: ['pickup'], sloop: ['ship'] },
+  autoTags: { hero: ['player'], orc: ['enemy'], slime: ['enemy'], coin: ['pickup'], sloop: ['ship'], horse: ['mount'] },
   stats: { hp: { default: 100, max: 100 }, coins: { default: 0 } },
 
   sounds: {
@@ -71,7 +71,7 @@ const config: GlyftConfig = {
     camera: { mode: 'follow', target: 'hero', distance: 11, pitch: 0.45, yaw: Math.PI, zoom: [5, 45] },
     controller: {
       sprite: 'hero', speed: 90, jump: 2,
-      board: { vehicles: ['cutter'], key: 'KeyF', range: 64 },
+      board: { vehicles: ['cutter', 'horse'], key: 'KeyF', range: 64 }, // a ship you sail, a horse you ride
       attack: { spawn: 'slash', frames: [4, 1], cooldown: 0.35 }, // click to swing; column 4 is the sword frame
     },
 
@@ -114,6 +114,7 @@ const config: GlyftConfig = {
         // Who appears where (in order, so later rules can be near earlier ones)
         spawns: {
           hero: { near: 'tower', radius: 140, with: { label: 'You', visualOffsetY: 1, walkFrames: 3 } },
+          horse: { near: 'hero', radius: 120, spacing: 32, with: { label: 'Horse', scale: 1.35, visualOffsetY: 1, walkFrames: 3 } },
           cutter: { where: 'shore', near: 'hero', radius: 700, facing: 'out', with: { label: 'Boat' } },
           sloop: { where: 'sea' },
           orc: { count: 6, where: 'hills', awayFrom: 'hero', with: { visualOffsetY: 1, walkFrames: 3, hpBarVisible: true, data: { maxHp: 100 } } },
@@ -175,6 +176,7 @@ await Promise.all([
   game.loadTexture('hero', './hero.png', { frameWidth: 32, frameHeight: 32 }),
   game.loadTexture('orc', './orc.png', { frameWidth: 32, frameHeight: 32 }),
   game.loadTexture('coin', './coin.png', { frameWidth: 16, frameHeight: 16 }),
+  game.loadTexture('horse', './horse.png', { frameWidth: 32, frameHeight: 32 }),
 ]);
 game.createTestAtlas('starter', 16, 16); // built-in art: the cave slimes
 

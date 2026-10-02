@@ -591,7 +591,7 @@ export interface ControllerDef {
     key?: string;
     /** Pixels from the vehicle's edge. @default 64 */
     range?: number;
-    /** Mounts: rider height above the mount's feet in world units. @default 45% of the mount's sprite height */
+    /** Mounts: rider height above the mount's feet in world units. @default 45% of the mount's drawn height */
     seat?: number;
     /** Mounts: speed in pixels per second. @default 1.5x the controller speed */
     speed?: number;
