@@ -75,6 +75,8 @@ export interface Area {
   readonly waterHeight: number | null;
   /** Lighting for this area (copied into the scene each frame) */
   readonly lighting: Lighting;
+  /** Under a sky, `light` tints the sky's colours (multiplied) instead of replacing them */
+  readonly tint: { ambient: [number, number, number]; sun: [number, number, number]; fog: [number, number, number] } | null;
 
   load(): Promise<void>;
   terrainHeight(wx: number, wz: number): number;
@@ -135,9 +137,18 @@ export function createArea(ctx: AreaContext, key: string, def: AreaDef): Area {
       fogFar: fogDef?.far ?? 260,
     };
 
+  const tint = !underground && def.light
+    ? {
+      ambient: hexToVec3(light.ambient ?? 0xffffff) as [number, number, number],
+      sun: hexToVec3(light.sun ?? 0xffffff) as [number, number, number],
+      fog: hexToVec3(light.fog ?? 0xffffff) as [number, number, number],
+    }
+    : null;
+
   const area: Area = {
     key,
     label: def.label ?? key,
+    tint,
     def,
     terrain: null,
     sky: null,
@@ -371,7 +382,7 @@ export function createArea(ctx: AreaContext, key: string, def: AreaDef): Area {
           for (let a = 0; a < 6; a++) {
             base = Math.min(base, area.terrainHeight(wx + Math.cos(a * 1.047) * fr, wz + Math.sin(a * 1.047) * fr));
           }
-          propList.push({ kind, x: wx, y: base - 0.05, z: wz, rotation: rand() * Math.PI * 2, scale });
+          propList.push({ kind, x: wx, y: base - 0.05, z: wz, rotation: rand() * Math.PI * 2, scale, tint: rule.tint, snow: rule.snow });
           const block = PROP_INFO[kind].radius * scale;
           if (block > 0) {
             const cell = `${Math.floor(wx / 2)},${Math.floor(wz / 2)}`;

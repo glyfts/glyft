@@ -936,6 +936,13 @@ export function createWorldSystem(
         lighting.ambient = cur.sky.getAmbientColor();
         lighting.light = cur.sky.getLightColor();
         lighting.lightDir = cur.sky.getLightDir();
+        const t = cur.tint;
+        if (t) {
+          const mul = (c: ArrayLike<number>, m: [number, number, number]) => [c[0] * m[0], c[1] * m[1], c[2] * m[2]] as Vec3;
+          lighting.ambient = mul(lighting.ambient, t.ambient);
+          lighting.light = mul(lighting.light, t.sun);
+          lighting.fogColor = mul(lighting.fogColor, t.fog);
+        }
       } else {
         lighting.fogColor = base.fogColor; lighting.ambient = base.ambient;
         lighting.light = base.light; lighting.lightDir = base.lightDir;

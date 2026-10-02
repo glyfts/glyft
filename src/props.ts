@@ -152,7 +152,8 @@ layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec3 a_normal;
 layout(location = 2) in vec3 a_color;
 layout(location = 3) in vec4 a_inst;   // x, y, z, rotation
-layout(location = 4) in vec2 a_inst2;  // scale, phase
+layout(location = 4) in vec3 a_inst2;  // scale, phase, snow
+layout(location = 5) in vec3 a_tint;
 uniform mat4 u_viewProj;
 uniform float u_time;
 uniform float u_sway;
@@ -160,6 +161,7 @@ uniform vec2 u_wind;
 out vec3 v_normal;
 out vec3 v_color;
 out vec3 v_world;
+out float v_snow;
 void main() {
   float c = cos(a_inst.w), s = sin(a_inst.w);
   vec3 p = a_pos * a_inst2.x;
@@ -169,7 +171,8 @@ void main() {
   p.z += u_wind.y * bend;
   vec3 world = vec3(p.x * c - p.z * s, p.y, p.x * s + p.z * c) + a_inst.xyz;
   v_normal = vec3(a_normal.x * c - a_normal.z * s, a_normal.y, a_normal.x * s + a_normal.z * c);
-  v_color = a_color;
+  v_color = a_color * a_tint;
+  v_snow = a_inst2.z;
   v_world = world;
   gl_Position = u_viewProj * vec4(world, 1.0);
 }`;
@@ -179,6 +182,7 @@ precision highp float;
 in vec3 v_normal;
 in vec3 v_color;
 in vec3 v_world;
+in float v_snow;
 uniform vec3 u_lightDir;
 uniform vec3 u_ambient;
 uniform vec3 u_light;
@@ -190,14 +194,20 @@ uniform float u_glow;
 out vec4 fragColor;
 void main() {
   vec3 n = normalize(v_normal);
+  // Snow settles on whatever faces up
+  vec3 base = mix(v_color, vec3(0.92, 0.95, 1.0), smoothstep(0.25, 0.7, abs(n.y)) * v_snow);
   float diffuse = max(dot(n, u_lightDir), 0.0);
-  vec3 lit = v_color * (u_ambient + u_light * diffuse);
-  vec3 color = mix(lit, v_color * 1.15, u_glow);
+  vec3 lit = base * (u_ambient + u_light * diffuse);
+  vec3 color = mix(lit, base * 1.15, u_glow);
   float fog = clamp((distance(v_world, u_cameraPos) - u_fogNear) / (u_fogFar - u_fogNear), 0.0, 1.0);
   fragColor = vec4(mix(color, u_fogColor, fog * (1.0 - u_glow * 0.6)), 1.0);
 }`;
 
-export interface PropInstance { kind: PropKind; x: number; y: number; z: number; rotation: number; scale: number }
+export interface PropInstance {
+  kind: PropKind; x: number; y: number; z: number; rotation: number; scale: number;
+  /** Colour multiplier (hex) and snow cover 0..1 */
+  tint?: number; snow?: number;
+}
 
 export interface PropSystem {
   /** Replace all instances (world units) */
@@ -209,7 +219,7 @@ export interface PropSystem {
 export function createPropSystem(gl: WebGL2RenderingContext): PropSystem {
   const shader = compileShader(gl, VS, FS,
     ['u_viewProj', 'u_time', 'u_sway', 'u_wind', 'u_lightDir', 'u_ambient', 'u_light', 'u_fogColor', 'u_fogNear', 'u_fogFar', 'u_cameraPos', 'u_glow'],
-    ['a_pos', 'a_normal', 'a_color', 'a_inst', 'a_inst2']);
+    ['a_pos', 'a_normal', 'a_color', 'a_inst', 'a_inst2', 'a_tint']);
 
   const kinds = new Map<PropKind, { vao: WebGLVertexArrayObject; vbo: WebGLBuffer; ibo: WebGLBuffer; verts: number; count: number }>();
   for (const kind of PROP_KINDS) {
@@ -226,11 +236,14 @@ export function createPropSystem(gl: WebGL2RenderingContext): PropSystem {
     const ibo = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, ibo);
     gl.enableVertexAttribArray(3);
-    gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 24, 0);
+    gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 40, 0);
     gl.vertexAttribDivisor(3, 1);
     gl.enableVertexAttribArray(4);
-    gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 24, 16);
+    gl.vertexAttribPointer(4, 3, gl.FLOAT, false, 40, 16);
     gl.vertexAttribDivisor(4, 1);
+    gl.enableVertexAttribArray(5);
+    gl.vertexAttribPointer(5, 3, gl.FLOAT, false, 40, 28);
+    gl.vertexAttribDivisor(5, 1);
     gl.bindVertexArray(null);
     kinds.set(kind, { vao, vbo, ibo, verts: data.length / 9, count: 0 });
   }
@@ -240,14 +253,16 @@ export function createPropSystem(gl: WebGL2RenderingContext): PropSystem {
       const byKind = new Map<PropKind, number[]>();
       for (const p of list) {
         const arr = byKind.get(p.kind) ?? [];
-        arr.push(p.x, p.y, p.z, p.rotation, p.scale, (p.x * 12.9898 + p.z * 78.233) % 6.283);
+        const t = p.tint ?? 0xffffff;
+        arr.push(p.x, p.y, p.z, p.rotation, p.scale, (p.x * 12.9898 + p.z * 78.233) % 6.283, p.snow ?? 0,
+          ((t >> 16) & 255) / 255, ((t >> 8) & 255) / 255, (t & 255) / 255);
         byKind.set(p.kind, arr);
       }
       for (const [kind, k] of kinds) {
         const arr = byKind.get(kind) ?? [];
         gl.bindBuffer(gl.ARRAY_BUFFER, k.ibo);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
-        k.count = arr.length / 6;
+        k.count = arr.length / 10;
       }
     },
 

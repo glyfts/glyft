@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glyft - Frostholm</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0c1018; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: system-ui, sans-serif; }
+    .container { text-align: center; }
+    canvas { width: min(960px, 100vw); aspect-ratio: 16 / 9; display: block; }
+    .info { color: #889; margin-top: 0.75rem; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <canvas id="game"></canvas>
+    <p class="info">A shared winter archipelago: everyone here sees each other</p>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

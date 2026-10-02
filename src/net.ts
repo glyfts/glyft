@@ -27,7 +27,7 @@ export interface NetHost {
 }
 
 interface RideState { k: string; x: number; y: number; z: number; f: number; m: boolean }
-interface State { a: string; x: number; y: number; z: number; f: number; vx: number; vy: number; r?: RideState | null }
+interface State { a: string; x: number; y: number; z: number; f: number; vx: number; vy: number; t?: number; r?: RideState | null }
 interface Sample { t: number; s: State }
 
 interface Remote {
@@ -206,6 +206,7 @@ export function createNetwork(config: NetworkConfig, host: NetHost): NetworkSyst
       x: r2(p.x), y: r2(p.y), z: r2(world ? host.heightOf(p.id) : 0),
       f: r2(world?.facingOf(p.id) ?? 0), vx: r2(p.vx), vy: r2(p.vy),
     };
+    if (p.tint !== 0xffffff) s.t = p.tint;
     const ride = world?.rideOf(p.id);
     const key = ride ? host.keyOf(ride.vehicle) : undefined;
     const v = ride ? host.getById(ride.vehicle) : undefined;
@@ -236,7 +237,7 @@ export function createNetwork(config: NetworkConfig, host: NetHost): NetworkSyst
     const s: State = {
       a: B.a,
       x: lerp(A.x, B.x, k), y: lerp(A.y, B.y, k), z: lerp(A.z, B.z, k),
-      f: lerpAngle(A.f, B.f, k), vx: B.vx, vy: B.vy,
+      f: lerpAngle(A.f, B.f, k), vx: B.vx, vy: B.vy, t: B.t,
     };
     let vvx = 0, vvy = 0;
     const ra = A.r, rb = B.r;
@@ -265,7 +266,7 @@ export function createNetwork(config: NetworkConfig, host: NetHost): NetworkSyst
       const g = host.spawn(type);
       if (me) {
         g.scale = me.scale; g.visualOffsetY = me.visualOffsetY;
-        g.walkFrames = me.walkFrames; g.idleFrames = me.idleFrames; g.tint = me.tint;
+        g.walkFrames = me.walkFrames; g.idleFrames = me.idleFrames;
       }
       g.tags = [];
       g.physics = false;
@@ -273,6 +274,7 @@ export function createNetwork(config: NetworkConfig, host: NetHost): NetworkSyst
       r.sprite = g;
     }
     const g = r.sprite;
+    g.tint = s.t ?? 0xffffff; // their colours, not yours
     g.x = s.x; g.y = s.y;
     g.vx = s.r ? 0 : s.vx; g.vy = s.r ? 0 : s.vy;
 

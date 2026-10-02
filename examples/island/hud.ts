@@ -54,17 +54,22 @@ export function createHud(game: Glyft, options: HudOptions): void {
     drawVignette(ctx, hurt);
     drawPlayerPanel(ctx, hp, maxHp, coins, options.coinsTotal, coinPop);
     drawMinimap(ctx, game, hero, mapImage);
-    drawClock(ctx, world.area === 'island' ? world.time : null);
+    drawClock(ctx, outdoors(game) ? world.time : null);
     for (const n of notes) n.t += dt;
     while (notes.length && notes[0].t > 5) notes.shift();
     drawOnline(ctx, game, notes);
     drawBanner(ctx, banner.text, banner.t);
     drawPrompt(ctx, promptText(game, hero, labels));
-    drawControls(ctx, elapsed);
+    drawControls(ctx, elapsed, !!game.config.world?.controller?.attack);
   });
 }
 
 // ---- Pieces ----
+
+/** Under a sky (not a cave) */
+function outdoors(game: Glyft): boolean {
+  return game.config.world?.areas?.[game.world!.area]?.sky !== false;
+}
 
 function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r = 12): void {
   ctx.beginPath();
@@ -133,7 +138,8 @@ function drawAreaMap(game: Glyft): HTMLCanvasElement {
   const img = ctx.createImageData(size, size);
   // Sample the whole area: probe outward from the middle to find its extent
   const span = areaSpan(game);
-  const underground = world.area !== 'island';
+  const underground = !outdoors(game);
+  const snowy = game.config.world?.areas?.[world.area]?.terrain?.textures?.mid === 'snow';
   const heights: number[] = [];
   for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) heights.push(world.heightAt((i + 0.5) / size * span, (j + 0.5) / size * span));
   const max = Math.max(...heights), min = Math.min(...heights);
@@ -147,6 +153,8 @@ function drawAreaMap(game: Glyft): HTMLCanvasElement {
         c = t < 0.25 ? [120 - t * 120, 98 - t * 100, 80 - t * 80] : [26, 22, 30];
       } else if (world.isWater(x, y)) {
         c = [40 + t * 60, 92 + t * 70, 150 + t * 50];
+      } else if (snowy) {
+        c = t < 0.24 ? [104, 110, 122] : t > 0.6 && t < 0.8 ? [150, 158, 172] : [226 + t * 20, 234 + t * 14, 246];
       } else if (t < 0.24) c = [214, 196, 148];
       else if (t < 0.55) c = [92 + t * 30, 150 - t * 30, 70];
       else if (t < 0.8) c = [120, 116, 108];
@@ -185,7 +193,7 @@ function drawMinimap(ctx: CanvasRenderingContext2D, game: Glyft, hero: Sprite, m
 
   ctx.save();
   ctx.beginPath(); ctx.arc(MAP_CX, MAP_CY, MAP_R, 0, Math.PI * 2); ctx.clip();
-  ctx.fillStyle = world.area === 'island' ? '#2a5c8a' : '#141018';
+  ctx.fillStyle = outdoors(game) ? '#2a5c8a' : '#141018';
   ctx.fillRect(MAP_CX - MAP_R, MAP_CY - MAP_R, MAP_R * 2, MAP_R * 2);
   ctx.translate(MAP_CX, MAP_CY);
   ctx.rotate(rot);
@@ -329,10 +337,11 @@ function drawPrompt(ctx: CanvasRenderingContext2D, prompt: [string, string] | nu
   ctx.fillText(text, x + 14 + kw, y + 22);
 }
 
-function drawControls(ctx: CanvasRenderingContext2D, elapsed: number): void {
+function drawControls(ctx: CanvasRenderingContext2D, elapsed: number, canAttack: boolean): void {
   if (elapsed > 12) return;
   const a = elapsed < 9 ? 1 : 1 - (elapsed - 9) / 3;
   const items: [string, string][] = [['WASD', 'move'], ['Click', 'attack'], ['Space', 'jump'], ['F', 'board'], ['Drag', 'camera']];
+  if (!canAttack) items.splice(1, 1);
   ctx.save();
   ctx.globalAlpha = a * 0.9;
   ctx.font = `600 11px ${FONT}`;

@@ -778,6 +778,10 @@ export type PropKind = 'pine' | 'oak' | 'bush' | 'rock' | 'boulder' | 'stalagmit
 export interface ScatterRule extends PlacementRule {
   /** Random size range. @default [0.8, 1.25] */
   scale?: [number, number];
+  /** Colour multiplier, e.g. 0xffaa66 for autumn leaves. @default 0xffffff */
+  tint?: number;
+  /** Snow on top, 0..1 (1 = fully snowed over). @default 0 */
+  snow?: number;
 }
 
 /** A building: its parts, plus an optional door (local [x, z] in world units) that exits can use. */
@@ -794,7 +798,7 @@ export interface AreaDef {
   terrain?: TerrainDef;
   /** Sky and day/night, or false for underground (fixed lighting from `light`). */
   sky?: SkyDef | false;
-  /** Fixed lighting when there is no sky: hex colours. @default dim cave light */
+  /** Hex colours. With no sky, the fixed lighting (@default dim cave light). Under a sky, a tint on the sky's own colours, e.g. a cold blue winter. */
   light?: { ambient?: number; sun?: number; fog?: number };
   place?: PlacementDef[];
   /** Props by kind: one rule, or several (e.g. boulders on the hills and around a cave mouth) */
