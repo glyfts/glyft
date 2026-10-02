@@ -939,12 +939,12 @@ export function createWorldSystem(
         b.noShadow = false;
         if (riding?.mounted && s.id === riding.rider) {
           b.noShadow = true; // the mount's shadow covers both
-          // Same test the shader uses to pick the mount's row: seen from the side, the rider's leg is over
-          // the flank (rider in front); seen head-on or from behind, the head or rump is nearer (rider behind)
+          // Same test the shader uses to pick the mount's row: only when the mount faces the camera is its
+          // head nearer than the rider; from the side or behind, the rider draws in front
           const cx = cam.position[0] - wx, cz = cam.position[2] - wz, len = Math.hypot(cx, cz) || 1;
           const rel = ((face - Math.atan2(cx, cz)) / (Math.PI * 2)) % 1;
           const row = Math.floor(((rel + 1) % 1) * 4 + 0.5) % 4; // 0 down, 1 right, 2 up, 3 left
-          const nudge = row === 1 || row === 3 ? 0.12 : -0.12;
+          const nudge = row === 0 ? -0.12 : 0.12;
           b.x += (cx / len) * nudge; b.z += (cz / len) * nudge;
           b.speed = 0;
         }
